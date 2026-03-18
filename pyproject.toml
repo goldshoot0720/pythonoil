@@ -1,0 +1,21 @@
+﻿[project]
+name = "pythonoil"
+version = "0.1.0"
+description = "Track daily OQD marker prices from Gulf Mercantile Exchange."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+oil-tracker = "oil_tracker.cli:main"
+oil-tracker-gui = "oil_tracker.gui:main"
+
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
