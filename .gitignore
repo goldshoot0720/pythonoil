@@ -6,4 +6,5 @@ __pycache__/
 tests_tmp/
 
 data/*.db
+data/*.log
 src/oil_tracker/data/*.db
