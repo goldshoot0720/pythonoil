@@ -1,4 +1,4 @@
-﻿# Python Oil Tracker
+# Python Oil Tracker
 
 這個專案會從 [Gulf Mercantile Exchange](https://www.gulfmerc.com/) 首頁抓取 `OQD Daily Marker Price`，並把每天的油價存進 SQLite，方便長期追蹤漲跌。
 
