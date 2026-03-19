@@ -157,7 +157,7 @@ python -m unittest discover -s tests
 
 ## GitHub Release Windows 執行檔
 
-只要 push 一個像 `v0.1.1` 這樣的 tag 到 GitHub，Actions 就會自動：
+只要 push 一個像 `v0.1.2` 這樣的 tag 到 GitHub，Actions 就會自動：
 
 - 在 `windows-latest` runner 安裝相依與 PyInstaller
 - 執行測試
@@ -167,8 +167,8 @@ python -m unittest discover -s tests
 常用指令：
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1
+git tag v0.1.2
+git push origin v0.1.2
 ```
 
 產出的 Windows 版會把資料寫在執行檔旁邊的 `data/oil_prices.db`。
