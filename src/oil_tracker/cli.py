@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 
 from .gme import fetch_price_record
+from .paths import default_db_path
 from .storage import OilPriceRepository
 
 
@@ -12,8 +13,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--db",
         type=Path,
-        default=Path("data/oil_prices.db"),
-        help="SQLite database path. Default: data/oil_prices.db",
+        default=default_db_path(),
+        help="SQLite database path. Default: ./data/oil_prices.db next to the app",
     )
     return parser
 

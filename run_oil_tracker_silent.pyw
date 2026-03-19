@@ -6,9 +6,10 @@ project_root = Path(__file__).resolve().parent
 sys.path.insert(0, str(project_root / "src"))
 
 from oil_tracker.gme import fetch_price_record
+from oil_tracker.paths import default_db_path, default_log_path
 from oil_tracker.storage import OilPriceRepository
 
-log_path = project_root / "data" / "oil_tracker.log"
+log_path = default_log_path()
 log_path.parent.mkdir(parents=True, exist_ok=True)
 
 def log(message: str) -> None:
@@ -17,7 +18,7 @@ def log(message: str) -> None:
         handle.write(f"[{timestamp}] {message}\n")
 
 try:
-    repository = OilPriceRepository(project_root / "data" / "oil_prices.db")
+    repository = OilPriceRepository(default_db_path())
     record = fetch_price_record()
     result = repository.save(record)
     if result.change is None:

@@ -16,9 +16,11 @@ except ModuleNotFoundError as exc:
 
 try:
     from .gme import fetch_price_record
+    from .paths import default_db_path
     from .storage import OilPriceRepository, SaveResult
 except ImportError:
     from gme import fetch_price_record
+    from paths import default_db_path
     from storage import OilPriceRepository, SaveResult
 
 
@@ -282,7 +284,7 @@ def main() -> None:
         raise SystemExit(1) from TK_IMPORT_ERROR
 
     root = tk.Tk()
-    app = OilTrackerApp(root, Path("data/oil_prices.db"))
+    app = OilTrackerApp(root, default_db_path())
     root.after(150, app.fetch_latest)
     root.mainloop()
 
