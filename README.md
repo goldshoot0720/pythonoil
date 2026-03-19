@@ -14,7 +14,17 @@
 
 ## 安裝
 
+macOS / Linux：
+
 ```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .
+```
+
+Windows：
+
+```powershell
 python -m venv .venv
 .venv\Scripts\activate
 pip install -e .
@@ -48,11 +58,34 @@ oil-tracker-gui
 python -m oil_tracker.gui
 ```
 
-在 `src\oil_tracker` 目錄也可直接執行：
+在 `src/oil_tracker` 目錄也可直接執行：
 
 ```bash
 python gui.py
 ```
+
+macOS 若想直接雙擊啟動，也可先給執行權限：
+
+```bash
+chmod +x run-oil-gui.command run-oil-tracker.command
+```
+
+之後可直接雙擊：
+
+- `run-oil-gui.command`：開啟圖形介面
+- `run-oil-tracker.command`：執行一次命令列抓取
+
+若要在終端執行，也可以：
+
+```bash
+./run-oil-gui.command
+./run-oil-tracker.command
+```
+
+如果 macOS 執行 GUI 時看到 `tkinter` 相關錯誤，代表目前的 Python 沒有包含 Tk。這種情況下：
+
+- 命令列模式 `oil-tracker` 仍可正常使用
+- GUI 需改用有 Tk 支援的 Python 發行版後再執行
 
 ## Windows 自動抓取
 
@@ -74,6 +107,29 @@ python gui.py
 背景執行紀錄會寫到：
 
 - `D:\codes\codexs\pythonoil\data\oil_tracker.log`
+
+## macOS 自動抓取
+
+如果是在 macOS 使用，建議不要使用這些 Windows 專用腳本：
+
+- `run-oil-tracker-hidden.ps1`
+- `run-oil-tracker.cmd`
+- `run-oil-gui.bat`
+- `setup-scheduled-task.ps1`
+
+macOS 可直接使用：
+
+```bash
+python run_oil_tracker_silent.pyw
+```
+
+或改成：
+
+```bash
+python -m oil_tracker.cli
+```
+
+若之後需要，我也可以再幫你補一份 `launchd` 用的 macOS 排程設定。
 
 ## 測試
 

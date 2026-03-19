@@ -2,8 +2,16 @@
 
 from pathlib import Path
 import threading
-import tkinter as tk
-from tkinter import ttk
+import sys
+
+try:
+    import tkinter as tk
+    from tkinter import ttk
+    TK_IMPORT_ERROR: ModuleNotFoundError | None = None
+except ModuleNotFoundError as exc:
+    tk = None
+    ttk = None
+    TK_IMPORT_ERROR = exc
 
 try:
     from .gme import fetch_price_record
@@ -261,6 +269,11 @@ class OilTrackerApp:
 
 
 def main() -> None:
+    if TK_IMPORT_ERROR is not None:
+        print("GUI is unavailable because this Python installation does not include tkinter.", file=sys.stderr)
+        print("On macOS, install a Python build with Tk support, or use the CLI command: oil-tracker", file=sys.stderr)
+        raise SystemExit(1) from TK_IMPORT_ERROR
+
     root = tk.Tk()
     app = OilTrackerApp(root, Path("data/oil_prices.db"))
     root.after(150, app.fetch_latest)
