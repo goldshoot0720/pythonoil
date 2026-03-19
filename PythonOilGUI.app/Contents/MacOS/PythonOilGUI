@@ -4,6 +4,8 @@ set -euo pipefail
 
 APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT_ROOT="$(cd "$APP_ROOT/../.." && pwd)"
+LOG_DIR="$PROJECT_ROOT/data"
+LOG_PATH="$LOG_DIR/gui_launcher.log"
 
 if [[ -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
   PYTHON_BIN="$PROJECT_ROOT/.venv/bin/python"
@@ -15,5 +17,9 @@ else
   PYTHON_BIN="/usr/bin/python3"
 fi
 
+mkdir -p "$LOG_DIR"
 export PYTHONPATH="$PROJECT_ROOT/src"
-exec "$PYTHON_BIN" -m oil_tracker.gui
+cd "$PROJECT_ROOT"
+nohup "$PYTHON_BIN" -m oil_tracker.gui >>"$LOG_PATH" 2>&1 </dev/null &
+disown
+exit 0
