@@ -7,11 +7,13 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>__RUNNER__</string>
+        <string>/bin/zsh</string>
+        <string>-lc</string>
+        <string>__COMMAND__</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>__PROJECT_ROOT__</string>
+    <string>__WORKING_DIRECTORY__</string>
 
     <key>RunAtLoad</key>
     <true/>
