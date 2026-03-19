@@ -129,7 +129,24 @@ python run_oil_tracker_silent.pyw
 python -m oil_tracker.cli
 ```
 
-若之後需要，我也可以再幫你補一份 `launchd` 用的 macOS 排程設定。
+若要在 macOS 上做到「每天下午 `13:00` 自動抓一次」以及「每次開機後第一次登入時補抓一次」，可使用內附的 `launchd` 設定：
+
+```bash
+chmod +x run-oil-tracker-background.sh install-macos-launch-agent.sh uninstall-macos-launch-agent.sh
+./install-macos-launch-agent.sh
+```
+
+這會安裝使用者層級的 `LaunchAgent`，行為如下：
+
+- 每天下午 `13:00` 執行一次
+- 每次登入 macOS 帳號時執行一次
+- 同一天重複執行也不會重複寫入資料
+
+這裡的「第一次開機自動抓取」在 macOS 會比較準確地表現為：
+
+- 你登入桌面後自動執行一次
+
+如果你需要的是「還沒登入桌面前、系統一開機就跑」，那要改用 `LaunchDaemon`，我也可以再幫你補。
 
 ## 測試
 
