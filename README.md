@@ -74,6 +74,7 @@ chmod +x run-oil-gui.command run-oil-tracker.command
 
 - `run-oil-gui.command`：開啟圖形介面
 - `run-oil-tracker.command`：執行一次命令列抓取
+- `PythonOilGUI.app`：在 macOS 直接開啟 GUI，不顯示終端機
 
 若要在終端執行，也可以：
 
