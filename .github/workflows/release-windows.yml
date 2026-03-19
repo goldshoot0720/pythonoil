@@ -39,7 +39,7 @@ jobs:
           --windowed
           --name PythonOilGUI
           --paths src
-          src/oil_tracker/gui.py
+          windows_gui_entry.py
 
       - name: Package release assets
         shell: pwsh
