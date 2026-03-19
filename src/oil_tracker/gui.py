@@ -3,6 +3,7 @@
 from pathlib import Path
 import threading
 import sys
+import webbrowser
 
 try:
     import tkinter as tk
@@ -58,6 +59,7 @@ class OilTrackerApp:
         self.style.configure("PanelTitle.TLabel", background="#f9f5ee", foreground="#16302b", font=("Georgia", 15, "bold"))
         self.style.configure("ChartTitle.TLabel", background="#fffaf2", foreground="#16302b", font=("Georgia", 15, "bold"))
         self.style.configure("Status.TLabel", background="#efe6d6", foreground="#5a4c3b", font=("Segoe UI", 10))
+        self.style.configure("Link.TLabel", background="#efe6d6", foreground="#0b5ea8", font=("Segoe UI", 10, "underline"))
         self.style.configure("Hint.TLabel", background="#fffaf2", foreground="#6f6355", font=("Segoe UI", 10))
         self.style.configure("Accent.TButton", font=("Segoe UI", 11, "bold"), padding=(16, 10), background="#b86a2c", foreground="#ffffff")
         self.style.map("Accent.TButton", background=[("active", "#9e5923")])
@@ -127,13 +129,18 @@ class OilTrackerApp:
         footer.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         footer.columnconfigure(0, weight=1)
         ttk.Label(footer, textvariable=self.status_var, style="Status.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(footer, textvariable=self.source_var, style="Status.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        source_link = ttk.Label(footer, textvariable=self.source_var, style="Link.TLabel", cursor="hand2")
+        source_link.grid(row=1, column=0, sticky="w", pady=(4, 0))
+        source_link.bind("<Button-1>", lambda _event: self.open_source_link())
 
     def _build_card(self, parent: ttk.Frame, column: int, title: str, variable: tk.StringVar) -> None:
         card = ttk.Frame(parent, style="Card.TFrame", padding=18)
         card.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 10, 0))
         ttk.Label(card, text=title, style="CardLabel.TLabel").pack(anchor="w")
         ttk.Label(card, textvariable=variable, style="CardValue.TLabel").pack(anchor="w", pady=(14, 0))
+
+    def open_source_link(self) -> None:
+        webbrowser.open_new_tab(self.source_var.get())
 
     def fetch_latest(self) -> None:
         self.fetch_button.state(["disabled"])
