@@ -18,10 +18,12 @@ except ModuleNotFoundError as exc:
 try:
     from .gme import fetch_price_record
     from .paths import default_db_path
+    from .github_stats import GitHubCommitStats, fetch_github_commit_stats
     from .storage import OilPriceRepository, SaveResult
 except ImportError:
     from gme import fetch_price_record
     from paths import default_db_path
+    from github_stats import GitHubCommitStats, fetch_github_commit_stats
     from storage import OilPriceRepository, SaveResult
 
 
@@ -62,6 +64,7 @@ class OilTrackerApp:
         self.style.configure("Panel.TFrame", background="#102238")
         self.style.configure("MutedCard.TFrame", background="#0c1a2d")
         self.style.configure("ChartPanel.TFrame", background="#0a1626")
+        self.style.configure("StatsPanel.TFrame", background="#0c1a2d")
 
         self.style.configure(
             "Eyebrow.TLabel",
@@ -154,6 +157,18 @@ class OilTrackerApp:
             font=("Segoe UI", 10, "underline"),
         )
         self.style.configure(
+            "StatsLabel.TLabel",
+            background="#0c1a2d",
+            foreground="#6f86a0",
+            font=("Segoe UI Semibold", 10),
+        )
+        self.style.configure(
+            "StatsValue.TLabel",
+            background="#0c1a2d",
+            foreground="#f4fbff",
+            font=("Segoe UI Semibold", 18),
+        )
+        self.style.configure(
             "Accent.TButton",
             font=("Segoe UI Semibold", 11),
             padding=(18, 12),
@@ -195,6 +210,7 @@ class OilTrackerApp:
         )
 
     def _build_layout(self) -> None:
+        self._build_menu()
         container = ttk.Frame(self.root, style="Root.TFrame", padding=28)
         container.pack(fill="both", expand=True)
         container.columnconfigure(0, weight=1)
@@ -317,6 +333,13 @@ class OilTrackerApp:
         source_link = ttk.Label(footer, textvariable=self.source_var, style="Link.TLabel", cursor="hand2")
         source_link.grid(row=1, column=0, sticky="w", pady=(4, 0))
         source_link.bind("<Button-1>", lambda _event: self.open_source_link())
+
+    def _build_menu(self) -> None:
+        menu_bar = tk.Menu(self.root)
+        stats_menu = tk.Menu(menu_bar, tearoff=False)
+        stats_menu.add_command(label="Commits", command=self.open_commit_stats_window)
+        menu_bar.add_cascade(label="統計", menu=stats_menu)
+        self.root.configure(menu=menu_bar)
 
     def _build_card(self, parent: ttk.Frame, column: int, title: str, variable: tk.StringVar, meta: str) -> None:
         card = ttk.Frame(parent, style="Card.TFrame", padding=18)
@@ -497,6 +520,114 @@ class OilTrackerApp:
         self.chart_hint_var.set(
             f"{momentum} | {records[0].price_date.isoformat()} to {records[-1].price_date.isoformat()} | {delta:+.2f}"
         )
+
+    def open_commit_stats_window(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Commits 統計")
+        window.geometry("860x620")
+        window.minsize(760, 520)
+        window.configure(bg="#07111f")
+
+        container = ttk.Frame(window, style="Root.TFrame", padding=20)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(4, weight=1)
+
+        username = "goldshoot0720"
+        profile_url = f"https://github.com/{username}?tab=repositories"
+
+        ttk.Label(container, text="Commits 統計", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        profile_link = ttk.Label(container, text=profile_url, style="Link.TLabel", cursor="hand2")
+        profile_link.grid(row=1, column=0, sticky="w", pady=(6, 16))
+        profile_link.bind("<Button-1>", lambda _event: webbrowser.open_new_tab(profile_url))
+
+        loading_var = tk.StringVar(value="載入 GitHub repositories commits 統計中...")
+        ttk.Label(container, textvariable=loading_var, style="Status.TLabel").grid(row=2, column=0, sticky="w")
+
+        summary = ttk.Frame(container, style="StatsPanel.TFrame", padding=16)
+        summary.grid(row=3, column=0, sticky="ew", pady=(14, 0))
+        for index in range(4):
+            summary.columnconfigure(index, weight=1)
+
+        total_repositories_var = tk.StringVar(value="-")
+        total_commits_var = tk.StringVar(value="-")
+        top_ten_total_var = tk.StringVar(value="-")
+        account_var = tk.StringVar(value=username)
+        summary_vars = [
+            ("Repositories", total_repositories_var),
+            ("總 Commits", total_commits_var),
+            ("前 10 合計", top_ten_total_var),
+            ("GitHub 帳號", account_var),
+        ]
+        for column, (label, variable) in enumerate(summary_vars):
+            block = ttk.Frame(summary, style="StatsPanel.TFrame")
+            block.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 10, 0))
+            ttk.Label(block, text=label, style="StatsLabel.TLabel").pack(anchor="w")
+            ttk.Label(block, textvariable=variable, style="StatsValue.TLabel").pack(anchor="w", pady=(8, 0))
+
+        content = ttk.Frame(container, style="Root.TFrame")
+        content.grid(row=4, column=0, sticky="nsew", pady=(16, 0))
+        content.columnconfigure(0, weight=1)
+        content.rowconfigure(0, weight=1)
+
+        top_panel = ttk.Frame(content, style="Panel.TFrame", padding=16)
+        top_panel.grid(row=0, column=0, sticky="nsew")
+        top_panel.columnconfigure(0, weight=1)
+        top_panel.rowconfigure(1, weight=1)
+        ttk.Label(top_panel, text="前十大 Commits 倉庫", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+
+        top_tree = ttk.Treeview(top_panel, columns=("rank", "repo", "commits"), show="headings", height=14)
+        top_tree.heading("rank", text="排名")
+        top_tree.heading("repo", text="Repository")
+        top_tree.heading("commits", text="Commits")
+        top_tree.column("rank", width=80, anchor="center")
+        top_tree.column("repo", width=440, anchor="w")
+        top_tree.column("commits", width=120, anchor="e")
+        top_tree.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+
+        scrollbar = ttk.Scrollbar(top_panel, orient="vertical", command=top_tree.yview)
+        scrollbar.grid(row=1, column=1, sticky="ns", pady=(12, 0))
+        top_tree.configure(yscrollcommand=scrollbar.set)
+
+        def apply_stats(stats: GitHubCommitStats) -> None:
+            if not window.winfo_exists():
+                return
+
+            total_repositories_var.set(str(stats.total_repositories))
+            total_commits_var.set(str(stats.total_commits))
+            top_ten_total_var.set(str(stats.top_commit_total))
+            loading_var.set("GitHub commits 統計已更新。")
+
+            for item in top_tree.get_children():
+                top_tree.delete(item)
+
+            for index, repo in enumerate(stats.top_repositories, start=1):
+                top_tree.insert("", "end", values=(index, repo.name, repo.commit_count))
+
+        def open_selected_repo(_event: tk.Event) -> None:
+            selection = top_tree.selection()
+            if not selection:
+                return
+            values = top_tree.item(selection[0], "values")
+            if len(values) < 2:
+                return
+            repo_name = str(values[1])
+            webbrowser.open_new_tab(f"https://github.com/{username}/{repo_name}")
+
+        def show_error(message: str) -> None:
+            if not window.winfo_exists():
+                return
+            loading_var.set(f"讀取失敗: {message}")
+
+        def worker() -> None:
+            try:
+                stats = fetch_github_commit_stats(username)
+                self.root.after(0, lambda: apply_stats(stats))
+            except Exception as exc:
+                self.root.after(0, lambda: show_error(str(exc)))
+
+        top_tree.bind("<Double-1>", open_selected_repo)
+        threading.Thread(target=worker, daemon=True).start()
 
 
 def main() -> None:
