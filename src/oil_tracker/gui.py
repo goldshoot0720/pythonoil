@@ -1,5 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 import threading
 import sys
@@ -29,103 +30,285 @@ class OilTrackerApp:
         self.root = root
         self.db_path = db_path
         self.repository = OilPriceRepository(db_path)
+        self._chart_records: list = []
 
-        self.root.title("OQD Daily Marker Price Tracker")
-        self.root.geometry("1180x760")
-        self.root.minsize(920, 620)
-        self.root.configure(bg="#efe6d6")
+        self.root.title("OQD Market Terminal")
+        self.root.geometry("1320x860")
+        self.root.minsize(1080, 700)
+        self.root.configure(bg="#07111f")
 
         self.style = ttk.Style()
         self.style.theme_use("clam")
         self._configure_styles()
 
-        self.status_var = tk.StringVar(value="Ready")
+        self.status_var = tk.StringVar(value="System ready")
         self.date_var = tk.StringVar(value="-")
         self.price_var = tk.StringVar(value="-")
         self.change_var = tk.StringVar(value="-")
         self.source_var = tk.StringVar(value="https://www.gulfmerc.com/")
-        self.chart_hint_var = tk.StringVar(value="No history yet")
+        self.chart_hint_var = tk.StringVar(value="Awaiting market history")
+        self.trend_var = tk.StringVar(value="No signal")
+        self.records_var = tk.StringVar(value="0 sessions")
+        self.range_var = tk.StringVar(value="No range")
+        self.last_sync_var = tk.StringVar(value="Not synced yet")
 
         self._build_layout()
         self.refresh_history()
 
     def _configure_styles(self) -> None:
-        self.style.configure("Root.TFrame", background="#efe6d6")
-        self.style.configure("Card.TFrame", background="#16302b")
-        self.style.configure("Panel.TFrame", background="#f9f5ee")
-        self.style.configure("ChartPanel.TFrame", background="#fffaf2")
-        self.style.configure("Title.TLabel", background="#efe6d6", foreground="#16302b", font=("Georgia", 24, "bold"))
-        self.style.configure("Subtitle.TLabel", background="#efe6d6", foreground="#5a4c3b", font=("Georgia", 11))
-        self.style.configure("CardLabel.TLabel", background="#16302b", foreground="#e7d7b1", font=("Segoe UI", 10, "bold"))
-        self.style.configure("CardValue.TLabel", background="#16302b", foreground="#fff9ec", font=("Georgia", 26, "bold"))
-        self.style.configure("PanelTitle.TLabel", background="#f9f5ee", foreground="#16302b", font=("Georgia", 15, "bold"))
-        self.style.configure("ChartTitle.TLabel", background="#fffaf2", foreground="#16302b", font=("Georgia", 15, "bold"))
-        self.style.configure("Status.TLabel", background="#efe6d6", foreground="#5a4c3b", font=("Segoe UI", 10))
-        self.style.configure("Link.TLabel", background="#efe6d6", foreground="#0b5ea8", font=("Segoe UI", 10, "underline"))
-        self.style.configure("Hint.TLabel", background="#fffaf2", foreground="#6f6355", font=("Segoe UI", 10))
-        self.style.configure("Accent.TButton", font=("Segoe UI", 11, "bold"), padding=(16, 10), background="#b86a2c", foreground="#ffffff")
-        self.style.map("Accent.TButton", background=[("active", "#9e5923")])
-        self.style.configure("Treeview", font=("Consolas", 10), rowheight=28)
-        self.style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"))
+        self.style.configure("Root.TFrame", background="#07111f")
+        self.style.configure("Hero.TFrame", background="#0b1628")
+        self.style.configure("Card.TFrame", background="#112742")
+        self.style.configure("Panel.TFrame", background="#102238")
+        self.style.configure("MutedCard.TFrame", background="#0c1a2d")
+        self.style.configure("ChartPanel.TFrame", background="#0a1626")
+
+        self.style.configure(
+            "Eyebrow.TLabel",
+            background="#0b1628",
+            foreground="#69c7ff",
+            font=("Segoe UI Semibold", 10),
+        )
+        self.style.configure(
+            "Title.TLabel",
+            background="#0b1628",
+            foreground="#f5fbff",
+            font=("Bahnschrift SemiBold", 29),
+        )
+        self.style.configure(
+            "Subtitle.TLabel",
+            background="#0b1628",
+            foreground="#8ea4bd",
+            font=("Segoe UI", 11),
+        )
+        self.style.configure(
+            "HeroMetricLabel.TLabel",
+            background="#0b1628",
+            foreground="#6f86a0",
+            font=("Segoe UI Semibold", 10),
+        )
+        self.style.configure(
+            "HeroMetricValue.TLabel",
+            background="#0b1628",
+            foreground="#f4fbff",
+            font=("Segoe UI Semibold", 18),
+        )
+        self.style.configure(
+            "CardLabel.TLabel",
+            background="#112742",
+            foreground="#6f86a0",
+            font=("Segoe UI Semibold", 10),
+        )
+        self.style.configure(
+            "CardValue.TLabel",
+            background="#112742",
+            foreground="#f3fbff",
+            font=("Bahnschrift SemiBold", 24),
+        )
+        self.style.configure(
+            "CardMeta.TLabel",
+            background="#112742",
+            foreground="#6dc6ff",
+            font=("Segoe UI", 10),
+        )
+        self.style.configure(
+            "PanelTitle.TLabel",
+            background="#102238",
+            foreground="#f3fbff",
+            font=("Segoe UI Semibold", 14),
+        )
+        self.style.configure(
+            "PanelBody.TLabel",
+            background="#102238",
+            foreground="#8fa8c3",
+            font=("Segoe UI", 10),
+        )
+        self.style.configure(
+            "MutedPanelBody.TLabel",
+            background="#0c1a2d",
+            foreground="#8fa8c3",
+            font=("Segoe UI", 10),
+        )
+        self.style.configure(
+            "ChartTitle.TLabel",
+            background="#0a1626",
+            foreground="#f3fbff",
+            font=("Segoe UI Semibold", 14),
+        )
+        self.style.configure(
+            "ChartHint.TLabel",
+            background="#0a1626",
+            foreground="#6dc6ff",
+            font=("Segoe UI", 10),
+        )
+        self.style.configure(
+            "Status.TLabel",
+            background="#07111f",
+            foreground="#90a7c1",
+            font=("Segoe UI", 10),
+        )
+        self.style.configure(
+            "Link.TLabel",
+            background="#07111f",
+            foreground="#7fd4ff",
+            font=("Segoe UI", 10, "underline"),
+        )
+        self.style.configure(
+            "Accent.TButton",
+            font=("Segoe UI Semibold", 11),
+            padding=(18, 12),
+            background="#1aa3ff",
+            foreground="#041220",
+            borderwidth=0,
+        )
+        self.style.map(
+            "Accent.TButton",
+            background=[("active", "#57bdff"), ("disabled", "#35506c")],
+            foreground=[("disabled", "#7e91a5")],
+        )
+
+        self.style.configure(
+            "Treeview",
+            background="#0d1b2d",
+            foreground="#dbe9f6",
+            fieldbackground="#0d1b2d",
+            bordercolor="#0d1b2d",
+            rowheight=30,
+            font=("Consolas", 10),
+        )
+        self.style.map("Treeview", background=[("selected", "#163d63")], foreground=[("selected", "#f4fbff")])
+        self.style.configure(
+            "Treeview.Heading",
+            background="#102238",
+            foreground="#7fd4ff",
+            bordercolor="#102238",
+            font=("Segoe UI Semibold", 10),
+            relief="flat",
+        )
+        self.style.map("Treeview.Heading", background=[("active", "#16314d")])
+        self.style.configure(
+            "Vertical.TScrollbar",
+            background="#16314d",
+            troughcolor="#091321",
+            arrowcolor="#7fd4ff",
+            bordercolor="#091321",
+        )
 
     def _build_layout(self) -> None:
-        container = ttk.Frame(self.root, style="Root.TFrame", padding=24)
+        container = ttk.Frame(self.root, style="Root.TFrame", padding=28)
         container.pack(fill="both", expand=True)
         container.columnconfigure(0, weight=1)
         container.rowconfigure(2, weight=1)
 
-        header = ttk.Frame(container, style="Root.TFrame")
+        header = ttk.Frame(container, style="Hero.TFrame", padding=24)
         header.grid(row=0, column=0, sticky="ew")
-        header.columnconfigure(0, weight=1)
+        header.columnconfigure(0, weight=3)
+        header.columnconfigure(1, weight=2)
 
-        ttk.Label(header, text="OQD Daily Marker Price", style="Title.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(header, text="Track Gulf Mercantile Exchange daily oil prices with local history and trend chart.", style="Subtitle.TLabel").grid(row=1, column=0, sticky="w", pady=(6, 0))
-        self.fetch_button = ttk.Button(header, text="抓取最新油價", style="Accent.TButton", command=self.fetch_latest)
-        self.fetch_button.grid(row=0, column=1, rowspan=2, sticky="e")
+        ttk.Label(header, text="MARKET MONITOR", style="Eyebrow.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(header, text="OQD Daily Marker Terminal", style="Title.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(
+            header,
+            text="Tech-finance desktop intelligence for Gulf Mercantile Exchange pricing, designed for quick reads, daily sync, and sharp review sessions.",
+            style="Subtitle.TLabel",
+            wraplength=660,
+            justify="left",
+        ).grid(row=2, column=0, sticky="w", pady=(10, 0))
+
+        hero_meta = ttk.Frame(header, style="Hero.TFrame")
+        hero_meta.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=(24, 0))
+        hero_meta.columnconfigure(0, weight=1)
+        hero_meta.columnconfigure(1, weight=1)
+
+        ttk.Label(hero_meta, text="TREND", style="HeroMetricLabel.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(hero_meta, text="LAST SYNC", style="HeroMetricLabel.TLabel").grid(row=0, column=1, sticky="w")
+        ttk.Label(hero_meta, textvariable=self.trend_var, style="HeroMetricValue.TLabel").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(hero_meta, textvariable=self.last_sync_var, style="HeroMetricValue.TLabel").grid(row=1, column=1, sticky="w", pady=(6, 0))
+        ttk.Label(hero_meta, text="DESIGN", style="HeroMetricLabel.TLabel").grid(row=2, column=0, sticky="w", pady=(18, 0))
+        ttk.Label(hero_meta, text="DATA VAULT", style="HeroMetricLabel.TLabel").grid(row=2, column=1, sticky="w", pady=(18, 0))
+        ttk.Label(hero_meta, text="2026 trading desk aesthetic", style="PanelBody.TLabel").grid(row=3, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(hero_meta, text=str(self.db_path), style="PanelBody.TLabel", wraplength=280, justify="left").grid(
+            row=3,
+            column=1,
+            sticky="w",
+            pady=(6, 0),
+        )
+        self.fetch_button = ttk.Button(hero_meta, text="抓取最新油價", style="Accent.TButton", command=self.fetch_latest)
+        self.fetch_button.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(22, 0))
 
         cards = ttk.Frame(container, style="Root.TFrame")
-        cards.grid(row=1, column=0, sticky="ew", pady=(24, 18))
-        for index in range(3):
+        cards.grid(row=1, column=0, sticky="ew", pady=(22, 18))
+        for index in range(5):
             cards.columnconfigure(index, weight=1)
 
-        self._build_card(cards, 0, "日期", self.date_var)
-        self._build_card(cards, 1, "價格", self.price_var)
-        self._build_card(cards, 2, "漲跌", self.change_var)
+        self._build_card(cards, 0, "SESSION DATE", self.date_var, "Latest captured pricing session")
+        self._build_card(cards, 1, "LAST PRICE", self.price_var, "OQD marker close")
+        self._build_card(cards, 2, "DAY CHANGE", self.change_var, "Versus prior saved record")
+        self._build_card(cards, 3, "DATA WINDOW", self.records_var, "Stored local history")
+        self._build_card(cards, 4, "TRADING RANGE", self.range_var, "Observed across loaded window")
 
         content = ttk.Frame(container, style="Root.TFrame")
         content.grid(row=2, column=0, sticky="nsew")
-        content.columnconfigure(0, weight=3)
-        content.columnconfigure(1, weight=2)
+        content.columnconfigure(0, weight=7)
+        content.columnconfigure(1, weight=4)
         content.rowconfigure(0, weight=1)
 
-        chart_panel = ttk.Frame(content, style="ChartPanel.TFrame", padding=18)
-        chart_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+        chart_panel = ttk.Frame(content, style="ChartPanel.TFrame", padding=20)
+        chart_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
         chart_panel.columnconfigure(0, weight=1)
         chart_panel.rowconfigure(1, weight=1)
 
-        ttk.Label(chart_panel, text="最近 30 筆價格走勢", style="ChartTitle.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(chart_panel, textvariable=self.chart_hint_var, style="Hint.TLabel").grid(row=0, column=1, sticky="e")
+        ttk.Label(chart_panel, text="Market Curve / Recent 30 Sessions", style="ChartTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(chart_panel, textvariable=self.chart_hint_var, style="ChartHint.TLabel").grid(row=0, column=1, sticky="e")
 
-        self.chart_canvas = tk.Canvas(chart_panel, bg="#fffaf2", highlightthickness=0)
+        self.chart_canvas = tk.Canvas(chart_panel, bg="#0a1626", highlightthickness=0)
         self.chart_canvas.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(14, 0))
         self.chart_canvas.bind("<Configure>", lambda _event: self.draw_chart())
 
-        table_panel = ttk.Frame(content, style="Panel.TFrame", padding=18)
-        table_panel.grid(row=0, column=1, sticky="nsew")
+        right_panel = ttk.Frame(content, style="Root.TFrame")
+        right_panel.grid(row=0, column=1, sticky="nsew")
+        right_panel.columnconfigure(0, weight=1)
+        right_panel.rowconfigure(0, weight=1)
+        right_panel.rowconfigure(1, weight=1)
+
+        table_panel = ttk.Frame(right_panel, style="Panel.TFrame", padding=18)
+        table_panel.grid(row=0, column=0, sticky="nsew")
         table_panel.columnconfigure(0, weight=1)
         table_panel.rowconfigure(1, weight=1)
 
-        ttk.Label(table_panel, text="最近紀錄", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(table_panel, text="Recent Records", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
         self.tree = ttk.Treeview(table_panel, columns=("date", "price"), show="headings", height=14)
         self.tree.heading("date", text="Date")
         self.tree.heading("price", text="Price")
         self.tree.column("date", width=130, anchor="center")
         self.tree.column("price", width=100, anchor="e")
         self.tree.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        self.tree.tag_configure("even", background="#0d1b2d")
+        self.tree.tag_configure("odd", background="#102238")
 
-        scrollbar = ttk.Scrollbar(table_panel, orient="vertical", command=self.tree.yview)
+        scrollbar = ttk.Scrollbar(table_panel, orient="vertical", command=self.tree.yview, style="Vertical.TScrollbar")
         scrollbar.grid(row=1, column=1, sticky="ns", pady=(12, 0))
         self.tree.configure(yscrollcommand=scrollbar.set)
+
+        insight_panel = ttk.Frame(right_panel, style="MutedCard.TFrame", padding=18)
+        insight_panel.grid(row=1, column=0, sticky="nsew", pady=(14, 0))
+        insight_panel.columnconfigure(0, weight=1)
+        ttk.Label(insight_panel, text="Desk Notes", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            insight_panel,
+            text="Built for internal commodity reviews: keep recent sessions visible, read the acceleration quickly, and sync fresh pricing without leaving the desktop.",
+            style="MutedPanelBody.TLabel",
+            wraplength=320,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(10, 0))
+        ttk.Label(insight_panel, text="SOURCE", style="HeroMetricLabel.TLabel").grid(row=2, column=0, sticky="w", pady=(20, 0))
+        ttk.Label(
+            insight_panel,
+            textvariable=self.source_var,
+            style="MutedPanelBody.TLabel",
+            wraplength=320,
+            justify="left",
+        ).grid(row=3, column=0, sticky="w", pady=(6, 0))
 
         footer = ttk.Frame(container, style="Root.TFrame")
         footer.grid(row=3, column=0, sticky="ew", pady=(12, 0))
@@ -135,18 +318,19 @@ class OilTrackerApp:
         source_link.grid(row=1, column=0, sticky="w", pady=(4, 0))
         source_link.bind("<Button-1>", lambda _event: self.open_source_link())
 
-    def _build_card(self, parent: ttk.Frame, column: int, title: str, variable: tk.StringVar) -> None:
+    def _build_card(self, parent: ttk.Frame, column: int, title: str, variable: tk.StringVar, meta: str) -> None:
         card = ttk.Frame(parent, style="Card.TFrame", padding=18)
         card.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 10, 0))
         ttk.Label(card, text=title, style="CardLabel.TLabel").pack(anchor="w")
-        ttk.Label(card, textvariable=variable, style="CardValue.TLabel").pack(anchor="w", pady=(14, 0))
+        ttk.Label(card, textvariable=variable, style="CardValue.TLabel").pack(anchor="w", pady=(12, 0))
+        ttk.Label(card, text=meta, style="CardMeta.TLabel", wraplength=190, justify="left").pack(anchor="w", pady=(10, 0))
 
     def open_source_link(self) -> None:
         webbrowser.open_new_tab(self.source_var.get())
 
     def fetch_latest(self) -> None:
         self.fetch_button.state(["disabled"])
-        self.status_var.set("Fetching latest price from gulfmerc.com...")
+        self.status_var.set("Sync in progress. Pulling latest price from gulfmerc.com...")
         worker = threading.Thread(target=self._fetch_worker, daemon=True)
         worker.start()
 
@@ -164,13 +348,14 @@ class OilTrackerApp:
         self.change_var.set("N/A" if result.change is None else f"{result.change:+.2f}")
 
         state_text = "Saved new record." if result.inserted else "Record for this date already exists."
-        self.status_var.set(f"{state_text} Database: {self.db_path}")
+        self.last_sync_var.set(datetime.now().strftime("%H:%M"))
+        self.status_var.set(f"{state_text} Vault: {self.db_path}")
         self.source_var.set(result.record.source_url)
         self.refresh_history()
         self.fetch_button.state(["!disabled"])
 
     def _show_error(self, message: str) -> None:
-        self.status_var.set(f"Fetch failed: {message}")
+        self.status_var.set(f"Sync failed: {message}")
         self.fetch_button.state(["!disabled"])
 
     def refresh_history(self) -> None:
@@ -179,8 +364,9 @@ class OilTrackerApp:
         for item in self.tree.get_children():
             self.tree.delete(item)
 
-        for record in recent_records:
-            self.tree.insert("", "end", values=(record.price_date.isoformat(), f"{record.price:.2f}"))
+        for index, record in enumerate(recent_records):
+            tag = "even" if index % 2 == 0 else "odd"
+            self.tree.insert("", "end", values=(record.price_date.isoformat(), f"{record.price:.2f}"), tags=(tag,))
 
         if recent_records:
             latest = recent_records[0]
@@ -189,9 +375,41 @@ class OilTrackerApp:
             self.price_var.set(f"{latest.price:.2f}")
             self.change_var.set("N/A" if previous is None else f"{latest.price - previous.price:+.2f}")
             self.source_var.set(latest.source_url)
+            self.last_sync_var.set(datetime.now().strftime("%H:%M"))
+        else:
+            self.date_var.set("-")
+            self.price_var.set("-")
+            self.change_var.set("-")
 
         self._chart_records = list(reversed(recent_records))
+        self._update_summary_metrics(recent_records)
         self.draw_chart()
+
+    def _update_summary_metrics(self, recent_records: list) -> None:
+        count = len(recent_records)
+        self.records_var.set(f"{count} sessions")
+
+        if count == 0:
+            self.range_var.set("No range")
+            self.trend_var.set("No signal")
+            return
+
+        prices = [record.price for record in recent_records]
+        low = min(prices)
+        high = max(prices)
+        self.range_var.set(f"{low:.2f} / {high:.2f}")
+
+        if count == 1:
+            self.trend_var.set("Flat")
+            return
+
+        delta = recent_records[0].price - recent_records[-1].price
+        if delta > 0:
+            self.trend_var.set(f"Bullish {delta:+.2f}")
+        elif delta < 0:
+            self.trend_var.set(f"Soft {delta:+.2f}")
+        else:
+            self.trend_var.set("Flat 0.00")
 
     def draw_chart(self) -> None:
         canvas = self.chart_canvas
@@ -199,18 +417,18 @@ class OilTrackerApp:
 
         width = max(canvas.winfo_width(), 300)
         height = max(canvas.winfo_height(), 240)
-        canvas.create_rectangle(0, 0, width, height, fill="#fffaf2", outline="")
+        canvas.create_rectangle(0, 0, width, height, fill="#0a1626", outline="")
 
-        records = getattr(self, "_chart_records", [])
+        records = self._chart_records
         if len(records) == 0:
-            canvas.create_text(width / 2, height / 2, text="尚無資料可繪圖", fill="#8a7b68", font=("Segoe UI", 14, "bold"))
+            canvas.create_text(width / 2, height / 2, text="No market curve yet", fill="#5f7892", font=("Segoe UI Semibold", 14))
             return
 
         if len(records) == 1:
             record = records[0]
-            canvas.create_text(width / 2, height / 2 - 12, text=f"{record.price_date.isoformat()}", fill="#6f6355", font=("Segoe UI", 11))
-            canvas.create_text(width / 2, height / 2 + 18, text=f"{record.price:.2f}", fill="#16302b", font=("Georgia", 24, "bold"))
-            self.chart_hint_var.set("Only one record")
+            canvas.create_text(width / 2, height / 2 - 12, text=record.price_date.isoformat(), fill="#7c95af", font=("Segoe UI", 11))
+            canvas.create_text(width / 2, height / 2 + 18, text=f"{record.price:.2f}", fill="#f4fbff", font=("Bahnschrift SemiBold", 26))
+            self.chart_hint_var.set("Single session on file")
             return
 
         padding_left = 58
@@ -234,11 +452,11 @@ class OilTrackerApp:
         def y_for(price: float) -> float:
             return padding_top + plot_height - ((price - lower_bound) / display_span) * plot_height
 
-        grid_color = "#e7dccb"
-        axis_color = "#9f8f7a"
-        line_color = "#b86a2c"
-        fill_color = "#d89a5b"
-        text_color = "#5c4f40"
+        grid_color = "#15304b"
+        axis_color = "#284767"
+        line_color = "#61cbff"
+        fill_color = "#0ea5ff"
+        text_color = "#7c95af"
 
         for step in range(5):
             y = padding_top + plot_height * step / 4
@@ -254,16 +472,17 @@ class OilTrackerApp:
             points.extend((x_for(index), y_for(record.price)))
 
         area_points = [padding_left, height - padding_bottom, *points, width - padding_right, height - padding_bottom]
-        canvas.create_polygon(area_points, fill="#f3d7b6", outline="")
+        canvas.create_polygon(area_points, fill="#0c4d77", outline="")
         canvas.create_line(*points, fill=line_color, width=3, smooth=True)
 
         for index, record in enumerate(records):
             x = x_for(index)
             y = y_for(record.price)
             radius = 4 if index != len(records) - 1 else 5
-            canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=fill_color, outline="#fffaf2", width=2)
+            outline = "#0a1626" if index != len(records) - 1 else "#f4fbff"
+            canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=fill_color, outline=outline, width=2)
 
-        label_indexes = sorted(set([0, len(records) // 2, len(records) - 1]))
+        label_indexes = sorted({0, len(records) // 2, len(records) - 1})
         for index in label_indexes:
             x = x_for(index)
             canvas.create_text(x, height - padding_bottom + 18, text=records[index].price_date.strftime("%m-%d"), fill=text_color, font=("Segoe UI", 9))
@@ -271,10 +490,13 @@ class OilTrackerApp:
         last_record = records[-1]
         last_x = x_for(len(records) - 1)
         last_y = y_for(last_record.price)
-        canvas.create_text(last_x - 8, last_y - 16, text=f"{last_record.price:.2f}", fill="#16302b", font=("Segoe UI", 10, "bold"), anchor="e")
+        canvas.create_text(last_x - 8, last_y - 16, text=f"{last_record.price:.2f}", fill="#f4fbff", font=("Segoe UI Semibold", 10), anchor="e")
 
         delta = records[-1].price - records[0].price
-        self.chart_hint_var.set(f"Range {records[0].price_date.isoformat()} to {records[-1].price_date.isoformat()} | {delta:+.2f}")
+        momentum = "Uptrend" if delta > 0 else "Downtrend" if delta < 0 else "Flat"
+        self.chart_hint_var.set(
+            f"{momentum} | {records[0].price_date.isoformat()} to {records[-1].price_date.isoformat()} | {delta:+.2f}"
+        )
 
 
 def main() -> None:
