@@ -16,6 +16,8 @@ except ModuleNotFoundError as exc:
     TK_IMPORT_ERROR = exc
 
 try:
+    from .creative_art import save_reference_vector_art
+    from .creative import load_creative_notes, save_creative_notes
     from .gme import fetch_price_record
     from .paths import default_db_path
     from .github_stats import (
@@ -28,6 +30,8 @@ try:
     from .settings import AppSettings, load_settings, save_settings
     from .storage import OilPriceRepository, SaveResult
 except ImportError:
+    from creative_art import save_reference_vector_art
+    from creative import load_creative_notes, save_creative_notes
     from gme import fetch_price_record
     from paths import default_db_path
     from github_stats import (
@@ -350,6 +354,7 @@ class OilTrackerApp:
 
     def _build_menu(self) -> None:
         menu_bar = tk.Menu(self.root)
+        menu_bar.add_command(label="自由創作", command=self.open_creative_studio)
         stats_menu = tk.Menu(menu_bar, tearoff=False)
         stats_menu.add_command(label="Commits", command=self.open_commit_stats_window)
         menu_bar.add_cascade(label="統計", menu=stats_menu)
@@ -357,6 +362,80 @@ class OilTrackerApp:
         settings_menu.add_command(label="GitHub Token", command=self.open_github_token_settings)
         menu_bar.add_cascade(label="設定", menu=settings_menu)
         self.root.configure(menu=menu_bar)
+
+    def open_creative_studio(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("自由創作")
+        window.geometry("920x680")
+        window.minsize(760, 540)
+        window.configure(bg="#07111f")
+
+        container = ttk.Frame(window, style="Root.TFrame", padding=20)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(2, weight=1)
+
+        ttk.Label(container, text="自由創作", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            container,
+            text="自由記錄靈感、段落、歌詞、文案或任何草稿。內容會儲存在本機，下次打開會自動帶回。",
+            style="Subtitle.TLabel",
+            wraplength=760,
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(8, 16))
+
+        editor_panel = ttk.Frame(container, style="Panel.TFrame", padding=16)
+        editor_panel.grid(row=2, column=0, sticky="nsew")
+        editor_panel.columnconfigure(0, weight=1)
+        editor_panel.rowconfigure(0, weight=1)
+
+        editor = tk.Text(
+            editor_panel,
+            wrap="word",
+            undo=True,
+            bg="#0d1b2d",
+            fg="#f4fbff",
+            insertbackground="#f4fbff",
+            relief="flat",
+            font=("Consolas", 12),
+            padx=14,
+            pady=14,
+        )
+        editor.grid(row=0, column=0, sticky="nsew")
+        editor.insert("1.0", load_creative_notes())
+        editor.focus_set()
+
+        scrollbar = ttk.Scrollbar(editor_panel, orient="vertical", command=editor.yview)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        editor.configure(yscrollcommand=scrollbar.set)
+
+        footer = ttk.Frame(container, style="Root.TFrame")
+        footer.grid(row=3, column=0, sticky="ew", pady=(14, 0))
+        footer.columnconfigure(0, weight=1)
+
+        creative_status_var = tk.StringVar(value="內容尚未儲存")
+        ttk.Label(footer, textvariable=creative_status_var, style="Status.TLabel").grid(row=0, column=0, sticky="w")
+
+        buttons = ttk.Frame(footer, style="Root.TFrame")
+        buttons.grid(row=0, column=1, sticky="e")
+
+        def save_current_notes() -> None:
+            save_creative_notes(editor.get("1.0", "end-1c"))
+            creative_status_var.set("自由創作內容已儲存到本機。")
+            self.status_var.set("自由創作內容已儲存。")
+
+        def clear_notes() -> None:
+            editor.delete("1.0", tk.END)
+            creative_status_var.set("已清空編輯內容，記得按儲存。")
+
+        def export_reference_vector_art() -> None:
+            output_path = save_reference_vector_art()
+            creative_status_var.set(f"已輸出附圖靈感向量圖：{output_path}")
+            self.status_var.set(f"向量圖已輸出：{output_path}")
+
+        ttk.Button(buttons, text="儲存", style="Accent.TButton", command=save_current_notes).pack(side="left")
+        ttk.Button(buttons, text="清空", command=clear_notes).pack(side="left", padx=(10, 0))
+        ttk.Button(buttons, text="附圖向量圖", command=export_reference_vector_art).pack(side="left", padx=(10, 0))
 
     def open_github_token_settings(self) -> None:
         settings = load_settings()
