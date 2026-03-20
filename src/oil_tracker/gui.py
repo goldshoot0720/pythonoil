@@ -18,13 +18,25 @@ except ModuleNotFoundError as exc:
 try:
     from .gme import fetch_price_record
     from .paths import default_db_path
-    from .github_stats import GitHubCommitStats, fetch_github_commit_stats
+    from .github_stats import (
+        CachedGitHubCommitStats,
+        GitHubCommitStats,
+        fetch_github_commit_stats,
+        load_cached_github_commit_stats,
+        save_cached_github_commit_stats,
+    )
     from .settings import AppSettings, load_settings, save_settings
     from .storage import OilPriceRepository, SaveResult
 except ImportError:
     from gme import fetch_price_record
     from paths import default_db_path
-    from github_stats import GitHubCommitStats, fetch_github_commit_stats
+    from github_stats import (
+        CachedGitHubCommitStats,
+        GitHubCommitStats,
+        fetch_github_commit_stats,
+        load_cached_github_commit_stats,
+        save_cached_github_commit_stats,
+    )
     from settings import AppSettings, load_settings, save_settings
     from storage import OilPriceRepository, SaveResult
 
@@ -679,6 +691,11 @@ class OilTrackerApp:
         profile_link.grid(row=1, column=0, sticky="w", pady=(6, 16))
         profile_link.bind("<Button-1>", lambda _event: webbrowser.open_new_tab(profile_url))
 
+        header_actions = ttk.Frame(container, style="Root.TFrame")
+        header_actions.grid(row=0, column=0, sticky="e")
+        refresh_button = ttk.Button(header_actions, text="重新抓取")
+        refresh_button.pack(anchor="e")
+
         loading_var = tk.StringVar(value="載入 GitHub repositories commits 統計中...")
         window._loading_var = loading_var
         ttk.Label(
@@ -688,6 +705,8 @@ class OilTrackerApp:
             wraplength=780,
             justify="left",
         ).grid(row=2, column=0, sticky="w")
+        last_updated_var = tk.StringVar(value="最後更新時間：尚未抓取")
+        ttk.Label(container, textvariable=last_updated_var, style="Status.TLabel").grid(row=2, column=0, sticky="e")
 
         summary = ttk.Frame(container, style="StatsPanel.TFrame", padding=16)
         summary.grid(row=3, column=0, sticky="ew", pady=(14, 0))
@@ -743,7 +762,7 @@ class OilTrackerApp:
         scrollbar.grid(row=1, column=1, sticky="ns", pady=(12, 0))
         top_tree.configure(yscrollcommand=scrollbar.set)
 
-        def apply_stats(stats: GitHubCommitStats) -> None:
+        def apply_stats(stats: GitHubCommitStats, fetched_at: str | None = None) -> None:
             if not window.winfo_exists():
                 return
 
@@ -751,6 +770,8 @@ class OilTrackerApp:
             total_commits_var.set(str(stats.total_commits))
             top_ten_total_var.set(str(stats.top_commit_total))
             loading_var.set("GitHub commits 統計已更新。")
+            if fetched_at:
+                last_updated_var.set(f"最後更新時間：{fetched_at}")
 
             for item in top_tree.get_children():
                 top_tree.delete(item)
@@ -803,6 +824,7 @@ class OilTrackerApp:
             for item in top_tree.get_children():
                 top_tree.delete(item)
             top_tree.insert("", "end", values=("-", "無法載入 GitHub 資料", "-"))
+            refresh_button.state(["!disabled"])
 
         def worker() -> None:
             try:
@@ -813,12 +835,25 @@ class OilTrackerApp:
                         0, lambda: update_progress(stage, current, total, repo_name, commit_count)
                     ),
                 )
-                self.root.after(0, lambda: apply_stats(stats))
+                cached = save_cached_github_commit_stats(stats)
+                self.root.after(0, lambda: apply_stats(stats, cached.fetched_at))
+                self.root.after(0, lambda: refresh_button.state(["!disabled"]))
             except Exception as exc:
                 self.root.after(0, lambda: show_error(str(exc)))
 
+        def start_refresh() -> None:
+            refresh_button.state(["disabled"])
+            loading_var.set("載入 GitHub repositories commits 統計中...")
+            threading.Thread(target=worker, daemon=True).start()
+
+        cached = load_cached_github_commit_stats()
+        if cached is not None and cached.stats.username == username:
+            apply_stats(cached.stats, cached.fetched_at)
+            loading_var.set("已載入快取資料，可按「重新抓取」更新。")
+
+        refresh_button.configure(command=start_refresh)
         top_tree.bind("<Double-1>", open_selected_repo)
-        threading.Thread(target=worker, daemon=True).start()
+        start_refresh()
 
 
 def main() -> None:

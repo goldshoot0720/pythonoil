@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 import json
 import os
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 try:
+    from .paths import default_commit_stats_cache_path
     from .settings import load_settings
 except ImportError:
+    from paths import default_commit_stats_cache_path
     from settings import load_settings
 
 GITHUB_API_BASE = "https://api.github.com"
@@ -37,6 +41,12 @@ class GitHubCommitStats:
     @property
     def top_commit_total(self) -> int:
         return sum(repo.commit_count for repo in self.top_repositories)
+
+
+@dataclass(slots=True)
+class CachedGitHubCommitStats:
+    stats: GitHubCommitStats
+    fetched_at: str
 
 
 def fetch_github_commit_stats(
@@ -145,3 +155,70 @@ def _github_headers() -> dict[str, str]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
+
+
+def load_cached_github_commit_stats(path: Path | None = None) -> CachedGitHubCommitStats | None:
+    cache_path = path or default_commit_stats_cache_path()
+    if not cache_path.exists():
+        return None
+
+    data = json.loads(cache_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        return None
+    stats_data = data.get("stats")
+    if not isinstance(stats_data, dict):
+        return None
+    top_repositories_data = stats_data.get("top_repositories", [])
+    if not isinstance(top_repositories_data, list):
+        top_repositories_data = []
+
+    stats = GitHubCommitStats(
+        username=str(stats_data.get("username", "")),
+        profile_url=str(stats_data.get("profile_url", "")),
+        total_commits=int(stats_data.get("total_commits", 0)),
+        total_repositories=int(stats_data.get("total_repositories", 0)),
+        top_repositories=[
+            GitHubRepoCommitStat(
+                name=str(repo.get("name", "")),
+                html_url=str(repo.get("html_url", "")),
+                commit_count=int(repo.get("commit_count", 0)),
+            )
+            for repo in top_repositories_data
+            if isinstance(repo, dict)
+        ],
+    )
+    return CachedGitHubCommitStats(stats=stats, fetched_at=str(data.get("fetched_at", "")))
+
+
+def save_cached_github_commit_stats(stats: GitHubCommitStats, path: Path | None = None) -> CachedGitHubCommitStats:
+    cache_path = path or default_commit_stats_cache_path()
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cached = CachedGitHubCommitStats(
+        stats=stats,
+        fetched_at=datetime.now(UTC).astimezone().strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    cache_path.write_text(
+        json.dumps(
+            {
+                "fetched_at": cached.fetched_at,
+                "stats": {
+                    "username": stats.username,
+                    "profile_url": stats.profile_url,
+                    "total_commits": stats.total_commits,
+                    "total_repositories": stats.total_repositories,
+                    "top_repositories": [
+                        {
+                            "name": repo.name,
+                            "html_url": repo.html_url,
+                            "commit_count": repo.commit_count,
+                        }
+                        for repo in stats.top_repositories
+                    ],
+                },
+            },
+            ensure_ascii=True,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return cached

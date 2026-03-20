@@ -7,7 +7,14 @@ from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from oil_tracker.github_stats import _github_headers, fetch_github_commit_stats
+from oil_tracker.github_stats import (
+    _github_headers,
+    GitHubCommitStats,
+    GitHubRepoCommitStat,
+    fetch_github_commit_stats,
+    load_cached_github_commit_stats,
+    save_cached_github_commit_stats,
+)
 from oil_tracker.settings import AppSettings, load_settings, save_settings
 
 
@@ -170,6 +177,36 @@ class GitHubCommitStatsTests(unittest.TestCase):
                 os.environ["GITHUB_TOKEN"] = original_token
 
         self.assertEqual(headers["Authorization"], "Bearer saved-token")
+
+    def test_commit_stats_cache_can_save_and_load(self) -> None:
+        test_dir = Path("tests_tmp") / self._testMethodName
+        if test_dir.exists():
+            shutil.rmtree(test_dir)
+        cache_path = test_dir / "commit_stats_cache.json"
+
+        stats = GitHubCommitStats(
+            username="goldshoot0720",
+            profile_url="https://github.com/goldshoot0720?tab=repositories",
+            total_commits=2093,
+            total_repositories=162,
+            top_repositories=[
+                GitHubRepoCommitStat(
+                    name="repo-a",
+                    html_url="https://github.com/goldshoot0720/repo-a",
+                    commit_count=100,
+                )
+            ],
+        )
+
+        saved = save_cached_github_commit_stats(stats, cache_path)
+        loaded = load_cached_github_commit_stats(cache_path)
+
+        self.assertIsNotNone(loaded)
+        assert loaded is not None
+        self.assertEqual(loaded.stats.total_commits, 2093)
+        self.assertEqual(loaded.stats.total_repositories, 162)
+        self.assertEqual(loaded.stats.top_repositories[0].name, "repo-a")
+        self.assertEqual(loaded.fetched_at, saved.fetched_at)
 
 
 if __name__ == "__main__":

@@ -20,3 +20,7 @@ def default_log_path() -> Path:
 
 def default_settings_path() -> Path:
     return app_base_dir() / "data" / "settings.json"
+
+
+def default_commit_stats_cache_path() -> Path:
+    return app_base_dir() / "data" / "commit_stats_cache.json"
