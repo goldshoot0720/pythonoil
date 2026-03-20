@@ -680,6 +680,7 @@ class OilTrackerApp:
         profile_link.bind("<Button-1>", lambda _event: webbrowser.open_new_tab(profile_url))
 
         loading_var = tk.StringVar(value="載入 GitHub repositories commits 統計中...")
+        window._loading_var = loading_var
         ttk.Label(
             container,
             textvariable=loading_var,
@@ -697,6 +698,12 @@ class OilTrackerApp:
         total_commits_var = tk.StringVar(value="-")
         top_ten_total_var = tk.StringVar(value="-")
         account_var = tk.StringVar(value=username)
+        window._commit_summary_vars = {
+            "repositories": total_repositories_var,
+            "total_commits": total_commits_var,
+            "top_ten_total": top_ten_total_var,
+            "account": account_var,
+        }
         running_commit_total = {"value": 0}
         summary_vars = [
             ("Repositories", total_repositories_var),
