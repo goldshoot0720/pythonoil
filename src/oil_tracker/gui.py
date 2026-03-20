@@ -8,7 +8,7 @@ import webbrowser
 
 try:
     import tkinter as tk
-    from tkinter import simpledialog, ttk
+    from tkinter import ttk
     TK_IMPORT_ERROR: ModuleNotFoundError | None = None
 except ModuleNotFoundError as exc:
     tk = None
@@ -347,21 +347,75 @@ class OilTrackerApp:
         self.root.configure(menu=menu_bar)
 
     def open_github_token_settings(self) -> None:
-        current = load_settings().github_token
-        token = simpledialog.askstring(
-            "GitHub Token",
-            "輸入 GitHub Personal Access Token。\n留空可清除已儲存的 token。",
-            initialvalue=current,
-            parent=self.root,
-        )
-        if token is None:
-            return
+        settings = load_settings()
+        window = tk.Toplevel(self.root)
+        window.title("GitHub Token")
+        window.geometry("720x320")
+        window.minsize(620, 280)
+        window.configure(bg="#07111f")
+        window.transient(self.root)
 
-        save_settings(AppSettings(github_token=token))
-        if token.strip():
+        container = ttk.Frame(window, style="Root.TFrame", padding=20)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(2, weight=1)
+
+        ttk.Label(container, text="GitHub Token", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+
+        status_text = "目前已儲存 token" if settings.github_token else "目前沒有儲存 token"
+        saved_status_var = tk.StringVar(value=status_text)
+        ttk.Label(container, textvariable=saved_status_var, style="Status.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+        form = ttk.Frame(container, style="Panel.TFrame", padding=16)
+        form.grid(row=2, column=0, sticky="nsew", pady=(16, 0))
+        form.columnconfigure(0, weight=1)
+
+        ttk.Label(
+            form,
+            text="貼上 GitHub Personal Access Token。環境變數 `GITHUB_TOKEN` 仍會優先於本機設定。",
+            style="PanelBody.TLabel",
+            wraplength=620,
+            justify="left",
+        ).grid(row=0, column=0, sticky="w")
+
+        token_var = tk.StringVar(value=settings.github_token)
+        show_token_var = tk.BooleanVar(value=False)
+
+        token_entry = ttk.Entry(form, textvariable=token_var, show="*", font=("Consolas", 11))
+        token_entry.grid(row=1, column=0, sticky="ew", pady=(14, 0))
+        token_entry.focus_set()
+        token_entry.selection_range(0, tk.END)
+
+        ttk.Checkbutton(
+            form,
+            text="顯示 token",
+            variable=show_token_var,
+            command=lambda: token_entry.configure(show="" if show_token_var.get() else "*"),
+        ).grid(row=2, column=0, sticky="w", pady=(10, 0))
+
+        buttons = ttk.Frame(form, style="Panel.TFrame")
+        buttons.grid(row=3, column=0, sticky="ew", pady=(18, 0))
+
+        def update_saved_status(token: str) -> None:
+            if token.strip():
+                saved_status_var.set("目前已儲存 token")
+            else:
+                saved_status_var.set("目前沒有儲存 token")
+
+        def save_token() -> None:
+            token = token_var.get().strip()
+            save_settings(AppSettings(github_token=token))
+            update_saved_status(token)
             self.status_var.set("GitHub token 已儲存到本機設定。")
-        else:
+
+        def clear_token() -> None:
+            token_var.set("")
+            save_settings(AppSettings(github_token=""))
+            update_saved_status("")
             self.status_var.set("GitHub token 已從本機設定清除。")
+
+        ttk.Button(buttons, text="儲存", style="Accent.TButton", command=save_token).pack(side="left")
+        ttk.Button(buttons, text="清除", command=clear_token).pack(side="left", padx=(10, 0))
 
     def _build_card(self, parent: ttk.Frame, column: int, title: str, variable: tk.StringVar, meta: str) -> None:
         card = ttk.Frame(parent, style="Card.TFrame", padding=18)
