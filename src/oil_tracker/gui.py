@@ -354,6 +354,7 @@ class OilTrackerApp:
         window.minsize(620, 280)
         window.configure(bg="#07111f")
         window.transient(self.root)
+        window.grab_set()
 
         container = ttk.Frame(window, style="Root.TFrame", padding=20)
         container.pack(fill="both", expand=True)
@@ -385,6 +386,67 @@ class OilTrackerApp:
         token_entry.grid(row=1, column=0, sticky="ew", pady=(14, 0))
         token_entry.focus_set()
         token_entry.selection_range(0, tk.END)
+
+        edit_menu = tk.Menu(window, tearoff=False)
+
+        def select_all(_event: tk.Event | None = None) -> str:
+            token_entry.selection_range(0, tk.END)
+            token_entry.icursor(tk.END)
+            return "break"
+
+        def paste_from_clipboard(_event: tk.Event | None = None) -> str:
+            try:
+                clipboard_text = window.clipboard_get()
+            except tk.TclError:
+                return "break"
+            token_entry.insert(token_entry.index(tk.INSERT), clipboard_text)
+            return "break"
+
+        def copy_selection(_event: tk.Event | None = None) -> str:
+            try:
+                selected_text = token_entry.selection_get()
+            except tk.TclError:
+                return "break"
+            window.clipboard_clear()
+            window.clipboard_append(selected_text)
+            return "break"
+
+        def cut_selection(_event: tk.Event | None = None) -> str:
+            try:
+                selected_text = token_entry.selection_get()
+                selection_start = token_entry.index(tk.SEL_FIRST)
+                selection_end = token_entry.index(tk.SEL_LAST)
+            except tk.TclError:
+                return "break"
+            window.clipboard_clear()
+            window.clipboard_append(selected_text)
+            token_entry.delete(selection_start, selection_end)
+            return "break"
+
+        def open_context_menu(event: tk.Event) -> str:
+            edit_menu.tk_popup(event.x_root, event.y_root)
+            return "break"
+
+        edit_menu.add_command(label="貼上", command=paste_from_clipboard)
+        edit_menu.add_command(label="複製", command=copy_selection)
+        edit_menu.add_command(label="剪下", command=cut_selection)
+        edit_menu.add_separator()
+        edit_menu.add_command(label="全選", command=select_all)
+
+        for sequence, handler in (
+            ("<Command-v>", paste_from_clipboard),
+            ("<Control-v>", paste_from_clipboard),
+            ("<Shift-Insert>", paste_from_clipboard),
+            ("<Command-c>", copy_selection),
+            ("<Control-c>", copy_selection),
+            ("<Command-x>", cut_selection),
+            ("<Control-x>", cut_selection),
+            ("<Command-a>", select_all),
+            ("<Control-a>", select_all),
+            ("<Button-2>", open_context_menu),
+            ("<Button-3>", open_context_menu),
+        ):
+            token_entry.bind(sequence, handler)
 
         ttk.Checkbutton(
             form,
