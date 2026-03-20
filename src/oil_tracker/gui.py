@@ -542,7 +542,13 @@ class OilTrackerApp:
         profile_link.bind("<Button-1>", lambda _event: webbrowser.open_new_tab(profile_url))
 
         loading_var = tk.StringVar(value="載入 GitHub repositories commits 統計中...")
-        ttk.Label(container, textvariable=loading_var, style="Status.TLabel").grid(row=2, column=0, sticky="w")
+        ttk.Label(
+            container,
+            textvariable=loading_var,
+            style="Status.TLabel",
+            wraplength=780,
+            justify="left",
+        ).grid(row=2, column=0, sticky="w")
 
         summary = ttk.Frame(container, style="StatsPanel.TFrame", padding=16)
         summary.grid(row=3, column=0, sticky="ew", pady=(14, 0))
@@ -584,6 +590,7 @@ class OilTrackerApp:
         top_tree.column("repo", width=440, anchor="w")
         top_tree.column("commits", width=120, anchor="e")
         top_tree.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        top_tree.insert("", "end", values=("-", "載入中...", "-"))
 
         scrollbar = ttk.Scrollbar(top_panel, orient="vertical", command=top_tree.yview)
         scrollbar.grid(row=1, column=1, sticky="ns", pady=(12, 0))
@@ -601,6 +608,10 @@ class OilTrackerApp:
             for item in top_tree.get_children():
                 top_tree.delete(item)
 
+            if not stats.top_repositories:
+                top_tree.insert("", "end", values=("-", "查無公開 repositories commits 資料", "-"))
+                return
+
             for index, repo in enumerate(stats.top_repositories, start=1):
                 top_tree.insert("", "end", values=(index, repo.name, repo.commit_count))
 
@@ -617,11 +628,17 @@ class OilTrackerApp:
         def show_error(message: str) -> None:
             if not window.winfo_exists():
                 return
-            loading_var.set(f"讀取失敗: {message}")
+            total_repositories_var.set("-")
+            total_commits_var.set("-")
+            top_ten_total_var.set("-")
+            loading_var.set(f"讀取失敗: {message}。請確認目前電腦可連上 GitHub。")
+            for item in top_tree.get_children():
+                top_tree.delete(item)
+            top_tree.insert("", "end", values=("-", "無法載入 GitHub 資料", "-"))
 
         def worker() -> None:
             try:
-                stats = fetch_github_commit_stats(username)
+                stats = fetch_github_commit_stats(username, timeout=8)
                 self.root.after(0, lambda: apply_stats(stats))
             except Exception as exc:
                 self.root.after(0, lambda: show_error(str(exc)))
