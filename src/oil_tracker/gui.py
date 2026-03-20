@@ -802,7 +802,6 @@ class OilTrackerApp:
                 stats = fetch_github_commit_stats(
                     username,
                     timeout=8,
-                    max_repositories=10,
                     progress_callback=lambda stage, current, total, repo_name, commit_count: self.root.after(
                         0, lambda: update_progress(stage, current, total, repo_name, commit_count)
                     ),
