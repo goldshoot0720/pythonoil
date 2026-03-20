@@ -8,7 +8,7 @@ import webbrowser
 
 try:
     import tkinter as tk
-    from tkinter import ttk
+    from tkinter import simpledialog, ttk
     TK_IMPORT_ERROR: ModuleNotFoundError | None = None
 except ModuleNotFoundError as exc:
     tk = None
@@ -19,11 +19,13 @@ try:
     from .gme import fetch_price_record
     from .paths import default_db_path
     from .github_stats import GitHubCommitStats, fetch_github_commit_stats
+    from .settings import AppSettings, load_settings, save_settings
     from .storage import OilPriceRepository, SaveResult
 except ImportError:
     from gme import fetch_price_record
     from paths import default_db_path
     from github_stats import GitHubCommitStats, fetch_github_commit_stats
+    from settings import AppSettings, load_settings, save_settings
     from storage import OilPriceRepository, SaveResult
 
 
@@ -339,7 +341,27 @@ class OilTrackerApp:
         stats_menu = tk.Menu(menu_bar, tearoff=False)
         stats_menu.add_command(label="Commits", command=self.open_commit_stats_window)
         menu_bar.add_cascade(label="統計", menu=stats_menu)
+        settings_menu = tk.Menu(menu_bar, tearoff=False)
+        settings_menu.add_command(label="GitHub Token", command=self.open_github_token_settings)
+        menu_bar.add_cascade(label="設定", menu=settings_menu)
         self.root.configure(menu=menu_bar)
+
+    def open_github_token_settings(self) -> None:
+        current = load_settings().github_token
+        token = simpledialog.askstring(
+            "GitHub Token",
+            "輸入 GitHub Personal Access Token。\n留空可清除已儲存的 token。",
+            initialvalue=current,
+            parent=self.root,
+        )
+        if token is None:
+            return
+
+        save_settings(AppSettings(github_token=token))
+        if token.strip():
+            self.status_var.set("GitHub token 已儲存到本機設定。")
+        else:
+            self.status_var.set("GitHub token 已從本機設定清除。")
 
     def _build_card(self, parent: ttk.Frame, column: int, title: str, variable: tk.StringVar, meta: str) -> None:
         card = ttk.Frame(parent, style="Card.TFrame", padding=18)
@@ -559,6 +581,7 @@ class OilTrackerApp:
         total_commits_var = tk.StringVar(value="-")
         top_ten_total_var = tk.StringVar(value="-")
         account_var = tk.StringVar(value=username)
+        running_commit_total = {"value": 0}
         summary_vars = [
             ("Repositories", total_repositories_var),
             ("總 Commits", total_commits_var),
@@ -568,8 +591,9 @@ class OilTrackerApp:
         for column, (label, variable) in enumerate(summary_vars):
             block = ttk.Frame(summary, style="StatsPanel.TFrame")
             block.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 10, 0))
-            ttk.Label(block, text=label, style="StatsLabel.TLabel").pack(anchor="w")
-            ttk.Label(block, textvariable=variable, style="StatsValue.TLabel").pack(anchor="w", pady=(8, 0))
+            block.columnconfigure(0, weight=1)
+            ttk.Label(block, text=label, style="StatsLabel.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(block, textvariable=variable, style="StatsValue.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
 
         content = ttk.Frame(container, style="Root.TFrame")
         content.grid(row=4, column=0, sticky="nsew", pady=(16, 0))
@@ -615,6 +639,27 @@ class OilTrackerApp:
             for index, repo in enumerate(stats.top_repositories, start=1):
                 top_tree.insert("", "end", values=(index, repo.name, repo.commit_count))
 
+        def update_progress(stage: str, current: int, total: int, repo_name: str | None, commit_count: int | None) -> None:
+            if not window.winfo_exists():
+                return
+            if stage == "repositories_loaded":
+                loading_var.set(f"已取得 repositories 清單，準備統計 {total} 個 repo...")
+                total_repositories_var.set(str(total))
+                total_commits_var.set("0")
+                top_ten_total_var.set("0")
+                running_commit_total["value"] = 0
+                return
+            if stage == "repo_commits_loading":
+                total_repositories_var.set(f"{current}/{total}")
+                loading_var.set(f"統計進度 {current}/{total}：正在讀取 {repo_name} commits...")
+                return
+            if stage == "repo_commits_loaded":
+                running_commit_total["value"] += commit_count or 0
+                total_repositories_var.set(f"{current}/{total}")
+                total_commits_var.set(str(running_commit_total["value"]))
+                top_ten_total_var.set(str(running_commit_total["value"]))
+                loading_var.set(f"統計進度 {current}/{total}：已完成 {repo_name}")
+
         def open_selected_repo(_event: tk.Event) -> None:
             selection = top_tree.selection()
             if not selection:
@@ -638,7 +683,14 @@ class OilTrackerApp:
 
         def worker() -> None:
             try:
-                stats = fetch_github_commit_stats(username, timeout=8)
+                stats = fetch_github_commit_stats(
+                    username,
+                    timeout=8,
+                    max_repositories=10,
+                    progress_callback=lambda stage, current, total, repo_name, commit_count: self.root.after(
+                        0, lambda: update_progress(stage, current, total, repo_name, commit_count)
+                    ),
+                )
                 self.root.after(0, lambda: apply_stats(stats))
             except Exception as exc:
                 self.root.after(0, lambda: show_error(str(exc)))

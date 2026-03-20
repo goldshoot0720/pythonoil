@@ -16,3 +16,7 @@ def default_db_path() -> Path:
 
 def default_log_path() -> Path:
     return app_base_dir() / "data" / "oil_tracker.log"
+
+
+def default_settings_path() -> Path:
+    return app_base_dir() / "data" / "settings.json"

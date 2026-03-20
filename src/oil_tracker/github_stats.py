@@ -3,13 +3,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 import json
+import os
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+try:
+    from .settings import load_settings
+except ImportError:
+    from settings import load_settings
 
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_PROFILE_BASE = "https://github.com"
 USER_AGENT = "Mozilla/5.0 (compatible; oil-tracker/0.1; +https://github.com/)"
 JsonFetcher = Callable[[str, int], list[dict]]
+ProgressCallback = Callable[[str, int, int, str | None, int | None], None]
 
 
 @dataclass(slots=True)
@@ -35,13 +42,21 @@ class GitHubCommitStats:
 def fetch_github_commit_stats(
     username: str,
     timeout: int = 20,
+    max_repositories: int | None = None,
     fetch_json: JsonFetcher | None = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> GitHubCommitStats:
     json_fetcher = fetch_json or _fetch_json
     repositories = _list_user_repositories(username, timeout, json_fetcher)
+    if max_repositories is not None:
+        repositories = repositories[:max_repositories]
+    if progress_callback is not None:
+        progress_callback("repositories_loaded", 0, len(repositories), None, None)
 
     repo_stats: list[GitHubRepoCommitStat] = []
-    for repo in repositories:
+    for index, repo in enumerate(repositories, start=1):
+        if progress_callback is not None:
+            progress_callback("repo_commits_loading", index, len(repositories), str(repo["name"]), None)
         commit_count = _fetch_repo_commit_count(username, repo["name"], timeout, json_fetcher)
         repo_stats.append(
             GitHubRepoCommitStat(
@@ -50,6 +65,8 @@ def fetch_github_commit_stats(
                 commit_count=commit_count,
             )
         )
+        if progress_callback is not None:
+            progress_callback("repo_commits_loaded", index, len(repositories), str(repo["name"]), commit_count)
 
     sorted_repositories = sorted(repo_stats, key=lambda repo: (-repo.commit_count, repo.name.lower()))
     return GitHubCommitStats(
@@ -95,11 +112,7 @@ def _fetch_repo_commit_count(
 def _fetch_json(url: str, timeout: int) -> list[dict]:
     request = Request(
         url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": USER_AGENT,
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers=_github_headers(),
     )
     try:
         with urlopen(request, timeout=timeout) as response:
@@ -118,3 +131,17 @@ def _fetch_json(url: str, timeout: int) -> list[dict]:
     if not isinstance(data, list):
         raise RuntimeError(f"Unexpected GitHub API response: {data}")
     return data
+
+
+def _github_headers() -> dict[str, str]:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": USER_AGENT,
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("PYTHONOIL_GITHUB_TOKEN")
+    if not token:
+        token = load_settings().github_token
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
