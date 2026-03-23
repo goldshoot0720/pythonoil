@@ -16,8 +16,6 @@ except ModuleNotFoundError as exc:
     TK_IMPORT_ERROR = exc
 
 try:
-    from .creative_art import save_reference_vector_art
-    from .creative import load_creative_notes, save_creative_notes
     from .gme import fetch_price_record
     from .paths import default_db_path
     from .github_stats import (
@@ -30,8 +28,6 @@ try:
     from .settings import AppSettings, load_settings, save_settings
     from .storage import OilPriceRepository, SaveResult
 except ImportError:
-    from creative_art import save_reference_vector_art
-    from creative import load_creative_notes, save_creative_notes
     from gme import fetch_price_record
     from paths import default_db_path
     from github_stats import (
@@ -354,7 +350,6 @@ class OilTrackerApp:
 
     def _build_menu(self) -> None:
         menu_bar = tk.Menu(self.root)
-        menu_bar.add_command(label="自由創作", command=self.open_creative_studio)
         stats_menu = tk.Menu(menu_bar, tearoff=False)
         stats_menu.add_command(label="Commits", command=self.open_commit_stats_window)
         menu_bar.add_cascade(label="統計", menu=stats_menu)
