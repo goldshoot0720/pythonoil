@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal, ROUND_HALF_UP
 from html import unescape
 from html.parser import HTMLParser
 import json
@@ -52,13 +53,16 @@ def fetch_us_national_debt(timeout: int = 20) -> USDebtRecord:
 
 
 def parse_us_national_debt(html: str) -> USDebtRecord:
+    amount_cents = _extract_amount_from_html(html)
+    if amount_cents is None:
+        amount_cents = _extract_amount_from_calculate_debt(html)
+    snapshot_date = _extract_snapshot_date(html)
+
     parser = _TextExtractor()
     parser.feed(html)
     text = unescape("\n".join(parser.lines))
     lines = [line.strip() for line in text.splitlines() if line.strip()]
 
-    amount_cents = None
-    snapshot_date = None
     for index, line in enumerate(lines):
         if amount_cents is None:
             amount_cents = _extract_amount_from_line(line)
@@ -76,6 +80,54 @@ def parse_us_national_debt(html: str) -> USDebtRecord:
         snapshot_date = datetime.now().date()
 
     return USDebtRecord(snapshot_date=snapshot_date, national_debt_cents=amount_cents)
+
+
+def _extract_amount_from_html(html: str) -> int | None:
+    match = re.search(
+        r'id=["\']debt-clock["\'][^>]*>\$?\s*([0-9][0-9,]*(?:\.\d{2})?)',
+        html,
+        flags=re.IGNORECASE,
+    )
+    if match is not None:
+        dollars, _, cents = match.group(1).replace(",", "").partition(".")
+        return int(dollars) * 100 + int((cents or "00").ljust(2, "0")[:2])
+
+    match = re.search(
+        r"<td[^>]*>\s*United\s+States\s+National\s+Debt\s*</td>\s*"
+        r"<td[^>]*>\s*(?:<span[^>]*>)?\$?\s*([0-9][0-9,]*(?:\.\d{2})?)",
+        html,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+
+    dollars, _, cents = match.group(1).replace(",", "").partition(".")
+    return int(dollars) * 100 + int((cents or "00").ljust(2, "0")[:2])
+
+
+def _extract_amount_from_calculate_debt(html: str, now: datetime | None = None) -> int | None:
+    match = re.search(
+        r"calculateDebt\(\s*(\d{4})\s*,\s*(\d{1,2})\s*,\s*(\d{1,2})\s*,\s*([0-9.E+-]+)\s*,\s*([0-9.E+-]+)\s*,",
+        html,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+
+    start_year = int(match.group(1))
+    start_month = int(match.group(2))
+    start_day = int(match.group(3))
+    base_debt = Decimal(match.group(4))
+    per_second_debt = Decimal(match.group(5))
+
+    current_time = now or datetime.now()
+    start_datetime = datetime(start_year, start_month, start_day)
+    delta_ms = max(0, int((current_time - start_datetime).total_seconds() * 1000))
+    elapsed_tenths = 0 if delta_ms == 0 else (delta_ms + 99) // 100
+
+    current_debt = base_debt + (Decimal(elapsed_tenths) * per_second_debt / Decimal("10"))
+    cents = (current_debt * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return int(cents)
 
 
 def _extract_amount_from_line(line: str) -> int | None:

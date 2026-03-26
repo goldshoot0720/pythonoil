@@ -1071,6 +1071,7 @@ class OilTrackerApp:
             status_var.set(f"Loaded {cached_count} cached US debt snapshots. Refresh to fetch the latest value.")
         else:
             status_var.set("No cached US debt history. Refresh to fetch the first snapshot.")
+        start_refresh()
 
     def open_commit_stats_window(self) -> None:
         window = tk.Toplevel(self.root)
