@@ -27,6 +27,7 @@ try:
     )
     from .settings import AppSettings, load_settings, save_settings
     from .storage import OilPriceRepository, SaveResult
+    from .us_debt import USDebtRecord, fetch_us_national_debt, load_us_debt_history, save_us_debt_record
 except ImportError:
     from gme import fetch_price_record
     from paths import default_db_path
@@ -39,6 +40,7 @@ except ImportError:
     )
     from settings import AppSettings, load_settings, save_settings
     from storage import OilPriceRepository, SaveResult
+    from us_debt import USDebtRecord, fetch_us_national_debt, load_us_debt_history, save_us_debt_record
 
 
 class OilTrackerApp:
@@ -350,6 +352,9 @@ class OilTrackerApp:
 
     def _build_menu(self) -> None:
         menu_bar = tk.Menu(self.root)
+        debt_menu = tk.Menu(menu_bar, tearoff=False)
+        debt_menu.add_command(label="US National Debt", command=self.open_us_debt_window)
+        menu_bar.add_cascade(label="US Debt", menu=debt_menu)
         stats_menu = tk.Menu(menu_bar, tearoff=False)
         stats_menu.add_command(label="Commits", command=self.open_commit_stats_window)
         menu_bar.add_cascade(label="統計", menu=stats_menu)
@@ -587,7 +592,7 @@ class OilTrackerApp:
             result = self.repository.save(record)
             self.root.after(0, lambda: self._apply_result(result))
         except Exception as exc:
-            self.root.after(0, lambda: self._show_error(str(exc)))
+            self.root.after(0, lambda message=str(exc): self._show_error(message))
 
     def _apply_result(self, result: SaveResult) -> None:
         self.date_var.set(result.record.price_date.isoformat())
@@ -744,6 +749,328 @@ class OilTrackerApp:
         self.chart_hint_var.set(
             f"{momentum} | {records[0].price_date.isoformat()} to {records[-1].price_date.isoformat()} | {delta:+.2f}"
         )
+
+    def open_us_debt_window(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("US National Debt")
+        window.geometry("980x680")
+        window.minsize(820, 560)
+        window.configure(bg="#07111f")
+
+        container = ttk.Frame(window, style="Root.TFrame", padding=20)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(4, weight=1)
+
+        source_url = "https://www.usadebtclock.com/"
+        status_var = tk.StringVar(value="Ready to load US national debt.")
+        last_updated_var = tk.StringVar(value="History not loaded yet")
+        current_value_var = tk.StringVar(value="-")
+        current_date_var = tk.StringVar(value="-")
+        change_var = tk.StringVar(value="-")
+        range_var = tk.StringVar(value="-")
+        history_records: list[USDebtRecord] = []
+
+        ttk.Label(container, text="US National Debt", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        source_link = ttk.Label(container, text=source_url, style="Link.TLabel", cursor="hand2")
+        source_link.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        source_link.bind("<Button-1>", lambda _event: webbrowser.open_new_tab(source_url))
+
+        header_actions = ttk.Frame(container, style="Root.TFrame")
+        header_actions.grid(row=0, column=0, sticky="e")
+        refresh_button = ttk.Button(header_actions, text="Refresh")
+        refresh_button.pack(anchor="e")
+
+        ttk.Label(container, textvariable=status_var, style="Status.TLabel", wraplength=900, justify="left").grid(
+            row=2,
+            column=0,
+            sticky="w",
+            pady=(12, 0),
+        )
+        ttk.Label(container, textvariable=last_updated_var, style="Status.TLabel").grid(row=2, column=0, sticky="e")
+
+        summary = ttk.Frame(container, style="StatsPanel.TFrame", padding=16)
+        summary.grid(row=3, column=0, sticky="ew", pady=(14, 0))
+        for index in range(4):
+            summary.columnconfigure(index, weight=1)
+
+        summary_vars = [
+            ("Latest Debt", current_value_var),
+            ("Snapshot Date", current_date_var),
+            ("Change", change_var),
+            ("30-Day Range", range_var),
+        ]
+        for column, (label, variable) in enumerate(summary_vars):
+            block = ttk.Frame(summary, style="StatsPanel.TFrame")
+            block.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 10, 0))
+            block.columnconfigure(0, weight=1)
+            ttk.Label(block, text=label, style="StatsLabel.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(block, textvariable=variable, style="StatsValue.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+        content = ttk.Frame(container, style="Root.TFrame")
+        content.grid(row=4, column=0, sticky="nsew", pady=(16, 0))
+        content.columnconfigure(0, weight=7)
+        content.columnconfigure(1, weight=3)
+        content.rowconfigure(0, weight=1)
+
+        chart_panel = ttk.Frame(content, style="ChartPanel.TFrame", padding=16)
+        chart_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+        chart_panel.columnconfigure(0, weight=1)
+        chart_panel.rowconfigure(1, weight=1)
+        ttk.Label(chart_panel, text="US National Debt / Recent 30 Snapshots", style="ChartTitle.TLabel").grid(
+            row=0,
+            column=0,
+            sticky="w",
+        )
+
+        chart_hint_var = tk.StringVar(value="Awaiting local debt history")
+        ttk.Label(chart_panel, textvariable=chart_hint_var, style="ChartHint.TLabel").grid(row=0, column=1, sticky="e")
+
+        debt_canvas = tk.Canvas(chart_panel, bg="#0a1626", highlightthickness=0)
+        debt_canvas.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(14, 0))
+
+        table_panel = ttk.Frame(content, style="Panel.TFrame", padding=16)
+        table_panel.grid(row=0, column=1, sticky="nsew")
+        table_panel.columnconfigure(0, weight=1)
+        table_panel.rowconfigure(1, weight=1)
+        ttk.Label(table_panel, text="Snapshot History", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+
+        history_tree = ttk.Treeview(table_panel, columns=("date", "debt"), show="headings", height=14)
+        history_tree.heading("date", text="Date")
+        history_tree.heading("debt", text="US Debt")
+        history_tree.column("date", width=120, anchor="center")
+        history_tree.column("debt", width=200, anchor="e")
+        history_tree.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        history_tree.tag_configure("even", background="#0d1b2d")
+        history_tree.tag_configure("odd", background="#102238")
+
+        scrollbar = ttk.Scrollbar(table_panel, orient="vertical", command=history_tree.yview, style="Vertical.TScrollbar")
+        scrollbar.grid(row=1, column=1, sticky="ns", pady=(12, 0))
+        history_tree.configure(yscrollcommand=scrollbar.set)
+
+        def format_currency(cents: int) -> str:
+            amount = cents / 100
+            return f"${amount:,.2f}"
+
+        def format_compact(cents: int) -> str:
+            amount = cents / 100
+            absolute = abs(amount)
+            if absolute >= 1_000_000_000_000:
+                return f"${amount / 1_000_000_000_000:.2f}T"
+            if absolute >= 1_000_000_000:
+                return f"${amount / 1_000_000_000:.2f}B"
+            if absolute >= 1_000_000:
+                return f"${amount / 1_000_000:.2f}M"
+            return f"${amount:,.2f}"
+
+        def redraw_chart() -> None:
+            debt_canvas.delete("all")
+
+            width = max(debt_canvas.winfo_width(), 320)
+            height = max(debt_canvas.winfo_height(), 240)
+            debt_canvas.create_rectangle(0, 0, width, height, fill="#0a1626", outline="")
+
+            if not history_records:
+                debt_canvas.create_text(
+                    width / 2,
+                    height / 2,
+                    text="No US debt history yet",
+                    fill="#5f7892",
+                    font=("Segoe UI Semibold", 14),
+                )
+                return
+
+            if len(history_records) == 1:
+                record = history_records[0]
+                debt_canvas.create_text(
+                    width / 2,
+                    height / 2 - 12,
+                    text=record.snapshot_date.isoformat(),
+                    fill="#7c95af",
+                    font=("Segoe UI", 11),
+                )
+                debt_canvas.create_text(
+                    width / 2,
+                    height / 2 + 18,
+                    text=format_compact(record.national_debt_cents),
+                    fill="#f4fbff",
+                    font=("Bahnschrift SemiBold", 26),
+                )
+                chart_hint_var.set("Single snapshot on file")
+                return
+
+            padding_left = 72
+            padding_right = 24
+            padding_top = 26
+            padding_bottom = 46
+            plot_width = width - padding_left - padding_right
+            plot_height = height - padding_top - padding_bottom
+
+            values = [record.national_debt_cents / 100 for record in history_records]
+            minimum = min(values)
+            maximum = max(values)
+            span = max(maximum - minimum, 1.0)
+            lower_bound = minimum - span * 0.12
+            upper_bound = maximum + span * 0.12
+            display_span = upper_bound - lower_bound
+
+            def x_for(index: int) -> float:
+                return padding_left + (plot_width * index / max(len(history_records) - 1, 1))
+
+            def y_for(value: float) -> float:
+                return padding_top + plot_height - ((value - lower_bound) / display_span) * plot_height
+
+            grid_color = "#15304b"
+            axis_color = "#284767"
+            line_color = "#ffb347"
+            fill_color = "#ff9f1a"
+            text_color = "#7c95af"
+
+            for step in range(5):
+                y = padding_top + plot_height * step / 4
+                value = upper_bound - (display_span * step / 4)
+                debt_canvas.create_line(padding_left, y, width - padding_right, y, fill=grid_color, width=1)
+                debt_canvas.create_text(
+                    padding_left - 10,
+                    y,
+                    text=format_compact(int(value * 100)),
+                    fill=text_color,
+                    font=("Segoe UI", 9),
+                    anchor="e",
+                )
+
+            debt_canvas.create_line(padding_left, padding_top, padding_left, height - padding_bottom, fill=axis_color, width=1)
+            debt_canvas.create_line(
+                padding_left,
+                height - padding_bottom,
+                width - padding_right,
+                height - padding_bottom,
+                fill=axis_color,
+                width=1,
+            )
+
+            points = []
+            for index, record in enumerate(history_records):
+                points.extend((x_for(index), y_for(record.national_debt_cents / 100)))
+
+            area_points = [padding_left, height - padding_bottom, *points, width - padding_right, height - padding_bottom]
+            debt_canvas.create_polygon(area_points, fill="#5a3c12", outline="")
+            debt_canvas.create_line(*points, fill=line_color, width=3, smooth=True)
+
+            for index, record in enumerate(history_records):
+                x = x_for(index)
+                y = y_for(record.national_debt_cents / 100)
+                radius = 4 if index != len(history_records) - 1 else 5
+                outline = "#0a1626" if index != len(history_records) - 1 else "#f4fbff"
+                debt_canvas.create_oval(x - radius, y - radius, x + radius, y + radius, fill=fill_color, outline=outline, width=2)
+
+            label_indexes = sorted({0, len(history_records) // 2, len(history_records) - 1})
+            for index in label_indexes:
+                x = x_for(index)
+                debt_canvas.create_text(
+                    x,
+                    height - padding_bottom + 18,
+                    text=history_records[index].snapshot_date.strftime("%m-%d"),
+                    fill=text_color,
+                    font=("Segoe UI", 9),
+                )
+
+            last_record = history_records[-1]
+            last_x = x_for(len(history_records) - 1)
+            last_y = y_for(last_record.national_debt_cents / 100)
+            debt_canvas.create_text(
+                last_x - 8,
+                last_y - 16,
+                text=format_compact(last_record.national_debt_cents),
+                fill="#f4fbff",
+                font=("Segoe UI Semibold", 10),
+                anchor="e",
+            )
+
+            delta_cents = history_records[-1].national_debt_cents - history_records[0].national_debt_cents
+            momentum = "Uptrend" if delta_cents > 0 else "Downtrend" if delta_cents < 0 else "Flat"
+            chart_hint_var.set(
+                f"{momentum} | {history_records[0].snapshot_date.isoformat()} to {history_records[-1].snapshot_date.isoformat()} | {format_compact(delta_cents)}"
+            )
+
+        def refresh_view() -> int:
+            recent_records = load_us_debt_history()[-30:]
+            history_records.clear()
+            history_records.extend(recent_records)
+
+            for item in history_tree.get_children():
+                history_tree.delete(item)
+
+            for index, record in enumerate(reversed(recent_records)):
+                tag = "even" if index % 2 == 0 else "odd"
+                history_tree.insert(
+                    "",
+                    "end",
+                    values=(record.snapshot_date.isoformat(), format_currency(record.national_debt_cents)),
+                    tags=(tag,),
+                )
+
+            if recent_records:
+                latest = recent_records[-1]
+                current_value_var.set(format_compact(latest.national_debt_cents))
+                current_date_var.set(latest.snapshot_date.isoformat())
+                last_updated_var.set(f"Latest local snapshot: {latest.snapshot_date.isoformat()}")
+
+                values = [record.national_debt_cents for record in recent_records]
+                range_var.set(f"{format_compact(min(values))} / {format_compact(max(values))}")
+                if len(recent_records) > 1:
+                    delta_cents = recent_records[-1].national_debt_cents - recent_records[-2].national_debt_cents
+                    change_var.set(format_compact(delta_cents))
+                else:
+                    change_var.set("N/A")
+            else:
+                current_value_var.set("-")
+                current_date_var.set("-")
+                change_var.set("-")
+                range_var.set("-")
+                last_updated_var.set("History not loaded yet")
+
+            redraw_chart()
+            return len(recent_records)
+
+        def show_error(message: str) -> None:
+            record_count = len(history_records)
+            if record_count > 0:
+                status_var.set(f"US debt refresh failed: {message} | Showing {record_count} cached snapshots.")
+            else:
+                status_var.set(f"US debt refresh failed: {message}")
+            refresh_button.state(["!disabled"])
+
+        def apply_result(result) -> None:
+            if result.inserted:
+                status_var.set("Saved a new US debt snapshot.")
+            elif result.updated:
+                status_var.set("Updated the latest US debt snapshot.")
+            else:
+                status_var.set("Latest US debt snapshot already matches local history.")
+            refresh_view()
+            refresh_button.state(["!disabled"])
+
+        def worker() -> None:
+            try:
+                record = fetch_us_national_debt(timeout=12)
+                result = save_us_debt_record(record)
+                self.root.after(0, lambda: apply_result(result))
+            except Exception as exc:
+                self.root.after(0, lambda message=str(exc): show_error(message))
+
+        def start_refresh() -> None:
+            refresh_button.state(["disabled"])
+            status_var.set("Loading US national debt from usadebtclock.com...")
+            threading.Thread(target=worker, daemon=True).start()
+
+        debt_canvas.bind("<Configure>", lambda _event: redraw_chart())
+        refresh_button.configure(command=start_refresh)
+        cached_count = refresh_view()
+        if cached_count > 0:
+            status_var.set(f"Loaded {cached_count} cached US debt snapshots. Refresh to fetch the latest value.")
+        else:
+            status_var.set("No cached US debt history. Refresh to fetch the first snapshot.")
 
     def open_commit_stats_window(self) -> None:
         window = tk.Toplevel(self.root)
@@ -913,7 +1240,7 @@ class OilTrackerApp:
                 self.root.after(0, lambda: apply_stats(stats, cached.fetched_at))
                 self.root.after(0, lambda: refresh_button.state(["!disabled"]))
             except Exception as exc:
-                self.root.after(0, lambda: show_error(str(exc)))
+                self.root.after(0, lambda message=str(exc): show_error(message))
 
         def start_refresh() -> None:
             refresh_button.state(["disabled"])

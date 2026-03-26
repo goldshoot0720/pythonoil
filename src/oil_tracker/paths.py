@@ -26,6 +26,10 @@ def default_commit_stats_cache_path() -> Path:
     return app_base_dir() / "data" / "commit_stats_cache.json"
 
 
+def default_us_debt_history_path() -> Path:
+    return app_base_dir() / "data" / "us_debt_history.json"
+
+
 def default_creative_notes_path() -> Path:
     return app_base_dir() / "data" / "creative_notes.txt"
 
