@@ -27,6 +27,7 @@ try:
     )
     from .settings import AppSettings, load_settings, save_settings
     from .storage import OilPriceRepository, SaveResult
+    from .taiwan_lottery import GAME_CONFIGS, build_group_summaries, fetch_all_lottery_draws
     from .us_debt import USDebtRecord, fetch_us_national_debt, load_us_debt_history, save_us_debt_record
 except ImportError:
     from gme import fetch_price_record
@@ -40,6 +41,7 @@ except ImportError:
     )
     from settings import AppSettings, load_settings, save_settings
     from storage import OilPriceRepository, SaveResult
+    from taiwan_lottery import GAME_CONFIGS, build_group_summaries, fetch_all_lottery_draws
     from us_debt import USDebtRecord, fetch_us_national_debt, load_us_debt_history, save_us_debt_record
 
 
@@ -49,6 +51,7 @@ class OilTrackerApp:
         self.db_path = db_path
         self.repository = OilPriceRepository(db_path)
         self._chart_records: list = []
+        self._lottery_draws: dict[str, list] | None = None
 
         self.root.title("OQD Market Terminal")
         self.root.geometry("1320x860")
@@ -361,6 +364,7 @@ class OilTrackerApp:
         settings_menu = tk.Menu(menu_bar, tearoff=False)
         settings_menu.add_command(label="GitHub Token", command=self.open_github_token_settings)
         menu_bar.add_cascade(label="設定", menu=settings_menu)
+        menu_bar.add_command(label="最瞎結婚理由", command=self.open_lottery_window)
         self.root.configure(menu=menu_bar)
 
     def open_creative_studio(self) -> None:
@@ -1256,6 +1260,135 @@ class OilTrackerApp:
         refresh_button.configure(command=start_refresh)
         top_tree.bind("<Double-1>", open_selected_repo)
         start_refresh()
+
+    def open_lottery_window(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("最瞎結婚理由")
+        window.geometry("1180x760")
+        window.minsize(980, 620)
+        window.configure(bg="#07111f")
+
+        container = ttk.Frame(window, style="Root.TFrame", padding=20)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(3, weight=1)
+
+        ttk.Label(container, text="最瞎結婚理由", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+
+        sources = ttk.Frame(container, style="Root.TFrame")
+        sources.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        for index, config in enumerate(GAME_CONFIGS):
+            source_link = ttk.Label(sources, text=config.source_url, style="Link.TLabel", cursor="hand2")
+            source_link.grid(row=index, column=0, sticky="w", pady=(0 if index == 0 else 6, 0))
+            source_link.bind("<Button-1>", lambda _event, url=config.source_url: webbrowser.open_new_tab(url))
+
+        header_actions = ttk.Frame(container, style="Root.TFrame")
+        header_actions.grid(row=0, column=0, sticky="e")
+        refresh_button = ttk.Button(header_actions, text="Refresh")
+        refresh_button.pack(anchor="e")
+
+        status_var = tk.StringVar(value="準備載入台灣彩券資料...")
+        ttk.Label(container, textvariable=status_var, style="Status.TLabel", wraplength=1060, justify="left").grid(
+            row=2,
+            column=0,
+            sticky="w",
+            pady=(12, 0),
+        )
+
+        notebook = ttk.Notebook(container)
+        notebook.grid(row=3, column=0, sticky="nsew", pady=(16, 0))
+
+        tab_views: dict[str, tuple[tk.StringVar, ttk.Treeview]] = {}
+        for config in GAME_CONFIGS:
+            tab = ttk.Frame(notebook, style="Root.TFrame", padding=12)
+            tab.columnconfigure(0, weight=1)
+            tab.rowconfigure(1, weight=1)
+            notebook.add(tab, text=config.title)
+
+            summary_var = tk.StringVar(value="尚未載入資料")
+            ttk.Label(tab, textvariable=summary_var, style="Status.TLabel", wraplength=1020, justify="left").grid(
+                row=0,
+                column=0,
+                sticky="w",
+                pady=(0, 10),
+            )
+
+            table_wrap = ttk.Frame(tab, style="Panel.TFrame", padding=10)
+            table_wrap.grid(row=1, column=0, sticky="nsew")
+            table_wrap.columnconfigure(0, weight=1)
+            table_wrap.rowconfigure(0, weight=1)
+
+            tree = ttk.Treeview(
+                table_wrap,
+                columns=("issue", "date", "numbers", "compare"),
+                show="headings",
+                height=18,
+            )
+            tree.heading("issue", text="期別")
+            tree.heading("date", text="開獎日期")
+            tree.heading("numbers", text="開獎號碼")
+            tree.heading("compare", text="比對結果")
+            tree.column("issue", width=120, anchor="center")
+            tree.column("date", width=110, anchor="center")
+            tree.column("numbers", width=290, anchor="center")
+            tree.column("compare", width=600, anchor="w")
+            tree.grid(row=0, column=0, sticky="nsew")
+            tree.tag_configure("even", background="#0d1b2d")
+            tree.tag_configure("odd", background="#102238")
+
+            scrollbar = ttk.Scrollbar(table_wrap, orient="vertical", command=tree.yview, style="Vertical.TScrollbar")
+            scrollbar.grid(row=0, column=1, sticky="ns")
+            tree.configure(yscrollcommand=scrollbar.set)
+            tab_views[config.key] = (summary_var, tree)
+
+        def apply_lottery_draws(draw_map: dict[str, list]) -> None:
+            self._lottery_draws = draw_map
+            for config in GAME_CONFIGS:
+                summary_var, tree = tab_views[config.key]
+                for item in tree.get_children():
+                    tree.delete(item)
+                draws = draw_map.get(config.key, [])
+                summary_var.set(
+                    f"共 {len(draws)} 期 | " + " | ".join(build_group_summaries(config, draws))
+                    if draws
+                    else "查無資料"
+                )
+                for index, draw in enumerate(reversed(draws)):
+                    tag = "even" if index % 2 == 0 else "odd"
+                    tree.insert(
+                        "",
+                        "end",
+                        values=(
+                            draw.issue,
+                            draw.draw_date,
+                            draw.numbers_text(config.special_label),
+                            draw.comparisons_text(config.special_label),
+                        ),
+                        tags=(tag,),
+                    )
+            refresh_button.state(["!disabled"])
+            status_var.set("台灣彩券資料已更新，已列出每期號碼與指定組合比對結果。")
+
+        def show_lottery_error(message: str) -> None:
+            refresh_button.state(["!disabled"])
+            status_var.set(f"台灣彩券資料載入失敗: {message}")
+
+        def worker(force_refresh: bool) -> None:
+            try:
+                draw_map = self._lottery_draws
+                if force_refresh or draw_map is None:
+                    draw_map = fetch_all_lottery_draws()
+                self.root.after(0, lambda: apply_lottery_draws(draw_map))
+            except Exception as exc:
+                self.root.after(0, lambda message=str(exc): show_lottery_error(message))
+
+        def start_refresh(force_refresh: bool) -> None:
+            refresh_button.state(["disabled"])
+            status_var.set("載入官方台灣彩券年度資料中，這會花一點時間...")
+            threading.Thread(target=lambda: worker(force_refresh), daemon=True).start()
+
+        refresh_button.configure(command=lambda: start_refresh(True))
+        start_refresh(False)
 
 
 def main() -> None:
