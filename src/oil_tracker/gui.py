@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+import random
 import threading
 import sys
 import webbrowser
@@ -45,6 +46,11 @@ except ImportError:
     from us_debt import USDebtRecord, fetch_us_national_debt, load_us_debt_history, save_us_debt_record
 
 
+def is_birthday_easter_egg_day(now: datetime | None = None) -> bool:
+    current = now or datetime.now()
+    return current.month == 4 and current.day == 3
+
+
 class OilTrackerApp:
     def __init__(self, root: tk.Tk, db_path: Path) -> None:
         self.root = root
@@ -52,6 +58,9 @@ class OilTrackerApp:
         self.repository = OilPriceRepository(db_path)
         self._chart_records: list = []
         self._lottery_draws: dict[str, list] | None = None
+        self._birthday_mode = is_birthday_easter_egg_day()
+        self._birthday_sparkles: list[dict[str, float | str]] = []
+        self._birthday_animation_tick = 0
 
         self.root.title("OQD Market Terminal")
         self.root.geometry("1320x860")
@@ -79,12 +88,25 @@ class OilTrackerApp:
     def _configure_styles(self) -> None:
         self.style.configure("Root.TFrame", background="#07111f")
         self.style.configure("Hero.TFrame", background="#0b1628")
+        self.style.configure("Birthday.TFrame", background="#27103b")
         self.style.configure("Card.TFrame", background="#112742")
         self.style.configure("Panel.TFrame", background="#102238")
         self.style.configure("MutedCard.TFrame", background="#0c1a2d")
         self.style.configure("ChartPanel.TFrame", background="#0a1626")
         self.style.configure("StatsPanel.TFrame", background="#0c1a2d")
 
+        self.style.configure(
+            "BirthdayTitle.TLabel",
+            background="#27103b",
+            foreground="#fff1a8",
+            font=("Bahnschrift SemiBold", 26),
+        )
+        self.style.configure(
+            "BirthdayBody.TLabel",
+            background="#27103b",
+            foreground="#ffe8ff",
+            font=("Segoe UI Semibold", 11),
+        )
         self.style.configure(
             "Eyebrow.TLabel",
             background="#0b1628",
@@ -233,10 +255,16 @@ class OilTrackerApp:
         container = ttk.Frame(self.root, style="Root.TFrame", padding=28)
         container.pack(fill="both", expand=True)
         container.columnconfigure(0, weight=1)
-        container.rowconfigure(2, weight=1)
+        content_row = 2
+
+        if self._birthday_mode:
+            self._build_birthday_banner(container)
+            content_row = 3
+
+        container.rowconfigure(content_row, weight=1)
 
         header = ttk.Frame(container, style="Hero.TFrame", padding=24)
-        header.grid(row=0, column=0, sticky="ew")
+        header.grid(row=1 if self._birthday_mode else 0, column=0, sticky="ew")
         header.columnconfigure(0, weight=3)
         header.columnconfigure(1, weight=2)
 
@@ -272,7 +300,7 @@ class OilTrackerApp:
         self.fetch_button.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(22, 0))
 
         cards = ttk.Frame(container, style="Root.TFrame")
-        cards.grid(row=1, column=0, sticky="ew", pady=(22, 18))
+        cards.grid(row=2 if self._birthday_mode else 1, column=0, sticky="ew", pady=(22, 18))
         for index in range(5):
             cards.columnconfigure(index, weight=1)
 
@@ -283,7 +311,7 @@ class OilTrackerApp:
         self._build_card(cards, 4, "TRADING RANGE", self.range_var, "Observed across loaded window")
 
         content = ttk.Frame(container, style="Root.TFrame")
-        content.grid(row=2, column=0, sticky="nsew")
+        content.grid(row=content_row, column=0, sticky="nsew")
         content.columnconfigure(0, weight=7)
         content.columnconfigure(1, weight=4)
         content.rowconfigure(0, weight=1)
@@ -346,12 +374,104 @@ class OilTrackerApp:
         ).grid(row=3, column=0, sticky="w", pady=(6, 0))
 
         footer = ttk.Frame(container, style="Root.TFrame")
-        footer.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        footer.grid(row=content_row + 1, column=0, sticky="ew", pady=(12, 0))
         footer.columnconfigure(0, weight=1)
         ttk.Label(footer, textvariable=self.status_var, style="Status.TLabel").grid(row=0, column=0, sticky="w")
         source_link = ttk.Label(footer, textvariable=self.source_var, style="Link.TLabel", cursor="hand2")
         source_link.grid(row=1, column=0, sticky="w", pady=(4, 0))
         source_link.bind("<Button-1>", lambda _event: self.open_source_link())
+
+    def _build_birthday_banner(self, parent: ttk.Frame) -> None:
+        banner = ttk.Frame(parent, style="Birthday.TFrame", padding=18)
+        banner.grid(row=0, column=0, sticky="ew", pady=(0, 18))
+        banner.columnconfigure(0, weight=3)
+        banner.columnconfigure(1, weight=2)
+
+        ttk.Label(banner, text="塗哥生日快樂", style="BirthdayTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            banner,
+            text="今彩539頭獎得主鋒兄",
+            style="BirthdayBody.TLabel",
+        ).grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(
+            banner,
+            text=f"{datetime.now().year}年4月3日限定彩蛋",
+            style="BirthdayBody.TLabel",
+        ).grid(row=2, column=0, sticky="w", pady=(6, 0))
+
+        self._birthday_canvas = tk.Canvas(
+            banner,
+            bg="#27103b",
+            highlightthickness=0,
+            height=90,
+        )
+        self._birthday_canvas.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=(18, 0))
+
+        self.status_var.set("塗哥生日快樂特效啟動中，今彩539頭獎得主鋒兄一起登場。")
+        self.root.after(120, self._animate_birthday_banner)
+
+    def _animate_birthday_banner(self) -> None:
+        if not self._birthday_mode or not hasattr(self, "_birthday_canvas"):
+            return
+
+        canvas = self._birthday_canvas
+        if not canvas.winfo_exists():
+            return
+
+        width = max(canvas.winfo_width(), 260)
+        height = max(canvas.winfo_height(), 90)
+        canvas.delete("all")
+        canvas.create_rectangle(0, 0, width, height, fill="#27103b", outline="")
+
+        palette = ("#ffe066", "#ff8fab", "#7bdff2", "#b8f2e6", "#f7a072")
+        self._birthday_animation_tick += 1
+
+        if len(self._birthday_sparkles) < 28:
+            for _ in range(5):
+                self._birthday_sparkles.append(
+                    {
+                        "x": random.uniform(0, width),
+                        "y": random.uniform(0, height),
+                        "size": random.uniform(4, 10),
+                        "dx": random.uniform(1.2, 3.6),
+                        "dy": random.uniform(-0.4, 0.4),
+                        "color": random.choice(palette),
+                    }
+                )
+
+        next_sparkles: list[dict[str, float | str]] = []
+        for sparkle in self._birthday_sparkles:
+            x = float(sparkle["x"]) + float(sparkle["dx"])
+            y = float(sparkle["y"]) + float(sparkle["dy"])
+            size = float(sparkle["size"])
+            color = str(sparkle["color"])
+            if x - size > width:
+                x = -size
+                y = random.uniform(8, height - 8)
+            canvas.create_oval(x - size, y - size, x + size, y + size, fill=color, outline="")
+            canvas.create_text(x, y, text="✦", fill="#fff8d6", font=("Segoe UI Symbol", max(int(size * 1.5), 8)))
+            sparkle["x"] = x
+            sparkle["y"] = y
+            next_sparkles.append(sparkle)
+
+        pulse = "#fff3b0" if self._birthday_animation_tick % 12 < 6 else "#ffd166"
+        canvas.create_text(
+            width * 0.5,
+            height * 0.35,
+            text="HAPPY BIRTHDAY",
+            fill=pulse,
+            font=("Bahnschrift SemiBold", 18),
+        )
+        canvas.create_text(
+            width * 0.5,
+            height * 0.7,
+            text="鋒兄把 539 喜氣一起帶來",
+            fill="#ffe8ff",
+            font=("Segoe UI Semibold", 11),
+        )
+
+        self._birthday_sparkles = next_sparkles
+        self.root.after(120, self._animate_birthday_banner)
 
     def _build_menu(self) -> None:
         menu_bar = tk.Menu(self.root)
