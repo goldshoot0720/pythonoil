@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import random
@@ -46,9 +47,46 @@ except ImportError:
     from us_debt import USDebtRecord, fetch_us_national_debt, load_us_debt_history, save_us_debt_record
 
 
-def is_birthday_easter_egg_day(now: datetime | None = None) -> bool:
+@dataclass(frozen=True)
+class BirthdayEasterEgg:
+    month: int
+    day: int
+    title: str
+    subtitle: str
+    status_text: str
+    canvas_line: str
+
+
+BIRTHDAY_EASTER_EGGS: tuple[BirthdayEasterEgg, ...] = (
+    BirthdayEasterEgg(
+        month=4,
+        day=3,
+        title="塗哥生日快樂",
+        subtitle="今彩539頭獎得主鋒兄",
+        status_text="塗哥生日快樂特效啟動中，今彩539頭獎得主鋒兄一起登場。",
+        canvas_line="鋒兄把 539 喜氣一起帶來",
+    ),
+    BirthdayEasterEgg(
+        month=11,
+        day=27,
+        title="鋒兄生日快樂",
+        subtitle="高考三級資訊處理榜首鋒兄",
+        status_text="鋒兄生日快樂特效啟動中，高考三級資訊處理榜首鋒兄閃亮登場。",
+        canvas_line="榜首鋒兄今天主場全開",
+    ),
+)
+
+
+def get_birthday_easter_egg(now: datetime | None = None) -> BirthdayEasterEgg | None:
     current = now or datetime.now()
-    return current.month == 4 and current.day == 3
+    for easter_egg in BIRTHDAY_EASTER_EGGS:
+        if current.month == easter_egg.month and current.day == easter_egg.day:
+            return easter_egg
+    return None
+
+
+def is_birthday_easter_egg_day(now: datetime | None = None) -> bool:
+    return get_birthday_easter_egg(now) is not None
 
 
 class OilTrackerApp:
@@ -58,7 +96,8 @@ class OilTrackerApp:
         self.repository = OilPriceRepository(db_path)
         self._chart_records: list = []
         self._lottery_draws: dict[str, list] | None = None
-        self._birthday_mode = is_birthday_easter_egg_day()
+        self._birthday_easter_egg = get_birthday_easter_egg()
+        self._birthday_mode = self._birthday_easter_egg is not None
         self._birthday_sparkles: list[dict[str, float | str]] = []
         self._birthday_animation_tick = 0
 
@@ -382,15 +421,18 @@ class OilTrackerApp:
         source_link.bind("<Button-1>", lambda _event: self.open_source_link())
 
     def _build_birthday_banner(self, parent: ttk.Frame) -> None:
+        if self._birthday_easter_egg is None:
+            return
+
         banner = ttk.Frame(parent, style="Birthday.TFrame", padding=18)
         banner.grid(row=0, column=0, sticky="ew", pady=(0, 18))
         banner.columnconfigure(0, weight=3)
         banner.columnconfigure(1, weight=2)
 
-        ttk.Label(banner, text="塗哥生日快樂", style="BirthdayTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(banner, text=self._birthday_easter_egg.title, style="BirthdayTitle.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(
             banner,
-            text="今彩539頭獎得主鋒兄",
+            text=self._birthday_easter_egg.subtitle,
             style="BirthdayBody.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(8, 0))
         ttk.Label(
@@ -407,7 +449,7 @@ class OilTrackerApp:
         )
         self._birthday_canvas.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=(18, 0))
 
-        self.status_var.set("塗哥生日快樂特效啟動中，今彩539頭獎得主鋒兄一起登場。")
+        self.status_var.set(self._birthday_easter_egg.status_text)
         self.root.after(120, self._animate_birthday_banner)
 
     def _animate_birthday_banner(self) -> None:
@@ -465,7 +507,7 @@ class OilTrackerApp:
         canvas.create_text(
             width * 0.5,
             height * 0.7,
-            text="鋒兄把 539 喜氣一起帶來",
+            text=self._birthday_easter_egg.canvas_line if self._birthday_easter_egg is not None else "",
             fill="#ffe8ff",
             font=("Segoe UI Semibold", 11),
         )
