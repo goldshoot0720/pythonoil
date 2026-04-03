@@ -27,6 +27,7 @@ try:
         load_cached_github_commit_stats,
         save_cached_github_commit_stats,
     )
+    from .pizza_watch import PizzaWatchSnapshot, fetch_pizza_watch_snapshot
     from .settings import AppSettings, load_settings, save_settings
     from .storage import OilPriceRepository, SaveResult
     from .taiwan_lottery import GAME_CONFIGS, build_group_summaries, fetch_all_lottery_draws
@@ -41,6 +42,7 @@ except ImportError:
         load_cached_github_commit_stats,
         save_cached_github_commit_stats,
     )
+    from pizza_watch import PizzaWatchSnapshot, fetch_pizza_watch_snapshot
     from settings import AppSettings, load_settings, save_settings
     from storage import OilPriceRepository, SaveResult
     from taiwan_lottery import GAME_CONFIGS, build_group_summaries, fetch_all_lottery_draws
@@ -96,6 +98,7 @@ class OilTrackerApp:
         self.repository = OilPriceRepository(db_path)
         self._chart_records: list = []
         self._lottery_draws: dict[str, list] | None = None
+        self._pizza_watch_snapshot: PizzaWatchSnapshot | None = None
         self._birthday_easter_egg = get_birthday_easter_egg()
         self._birthday_mode = self._birthday_easter_egg is not None
         self._birthday_sparkles: list[dict[str, float | str]] = []
@@ -527,6 +530,7 @@ class OilTrackerApp:
         settings_menu.add_command(label="GitHub Token", command=self.open_github_token_settings)
         menu_bar.add_cascade(label="設定", menu=settings_menu)
         menu_bar.add_command(label="最瞎結婚理由", command=self.open_lottery_window)
+        menu_bar.add_command(label="披薩監控", command=self.open_pizza_watch_window)
         self.root.configure(menu=menu_bar)
 
     def open_creative_studio(self) -> None:
@@ -1422,6 +1426,214 @@ class OilTrackerApp:
         refresh_button.configure(command=start_refresh)
         top_tree.bind("<Double-1>", open_selected_repo)
         start_refresh()
+
+    def open_pizza_watch_window(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("披薩監控")
+        window.geometry("1080x720")
+        window.minsize(920, 580)
+        window.configure(bg="#07111f")
+
+        container = ttk.Frame(window, style="Root.TFrame", padding=20)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=3)
+        container.columnconfigure(1, weight=2)
+        container.rowconfigure(3, weight=1)
+
+        ttk.Label(container, text="披薩監控", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        source_link = ttk.Label(container, text="https://www.pizzint.watch/", style="Link.TLabel", cursor="hand2")
+        source_link.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        source_link.bind("<Button-1>", lambda _event: webbrowser.open_new_tab("https://www.pizzint.watch/"))
+
+        header_actions = ttk.Frame(container, style="Root.TFrame")
+        header_actions.grid(row=0, column=1, sticky="e")
+        refresh_button = ttk.Button(header_actions, text="Refresh")
+        refresh_button.pack(anchor="e")
+
+        status_var = tk.StringVar(value="準備載入 PizzINT 快照...")
+        ttk.Label(container, textvariable=status_var, style="Status.TLabel", wraplength=1020, justify="left").grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(12, 0),
+        )
+
+        chart_panel = ttk.Frame(container, style="ChartPanel.TFrame", padding=18)
+        chart_panel.grid(row=3, column=0, sticky="nsew", padx=(0, 14), pady=(16, 0))
+        chart_panel.columnconfigure(0, weight=1)
+        chart_panel.rowconfigure(1, weight=1)
+        ttk.Label(chart_panel, text="Pentagon Pizza Distance Chart", style="ChartTitle.TLabel").grid(row=0, column=0, sticky="w")
+
+        chart_hint_var = tk.StringVar(value="等待資料")
+        ttk.Label(chart_panel, textvariable=chart_hint_var, style="ChartHint.TLabel").grid(row=0, column=1, sticky="e")
+
+        chart_canvas = tk.Canvas(chart_panel, bg="#0a1626", highlightthickness=0)
+        chart_canvas.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(14, 0))
+
+        side_panel = ttk.Frame(container, style="Root.TFrame")
+        side_panel.grid(row=3, column=1, sticky="nsew", pady=(16, 0))
+        side_panel.columnconfigure(0, weight=1)
+        side_panel.rowconfigure(1, weight=1)
+
+        summary_panel = ttk.Frame(side_panel, style="StatsPanel.TFrame", padding=16)
+        summary_panel.grid(row=0, column=0, sticky="ew")
+        for index in range(4):
+            summary_panel.columnconfigure(index, weight=1)
+
+        doughcon_var = tk.StringVar(value="-")
+        message_var = tk.StringVar(value="-")
+        monitored_var = tk.StringVar(value="-")
+        nearest_var = tk.StringVar(value="-")
+        for column, (label, variable) in enumerate(
+            (
+                ("Doughcon", doughcon_var),
+                ("Watch", message_var),
+                ("Locations", monitored_var),
+                ("Nearest", nearest_var),
+            )
+        ):
+            block = ttk.Frame(summary_panel, style="StatsPanel.TFrame")
+            block.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 10, 0))
+            block.columnconfigure(0, weight=1)
+            ttk.Label(block, text=label, style="StatsLabel.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(block, textvariable=variable, style="StatsValue.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+        table_panel = ttk.Frame(side_panel, style="Panel.TFrame", padding=16)
+        table_panel.grid(row=1, column=0, sticky="nsew", pady=(14, 0))
+        table_panel.columnconfigure(0, weight=1)
+        table_panel.rowconfigure(1, weight=1)
+        ttk.Label(table_panel, text="Monitored Pizza Shops", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+
+        shop_tree = ttk.Treeview(table_panel, columns=("name", "status", "distance"), show="headings", height=14)
+        shop_tree.heading("name", text="Store")
+        shop_tree.heading("status", text="Status")
+        shop_tree.heading("distance", text="Miles")
+        shop_tree.column("name", width=260, anchor="w")
+        shop_tree.column("status", width=90, anchor="center")
+        shop_tree.column("distance", width=90, anchor="e")
+        shop_tree.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        shop_tree.tag_configure("even", background="#0d1b2d")
+        shop_tree.tag_configure("odd", background="#102238")
+
+        scrollbar = ttk.Scrollbar(table_panel, orient="vertical", command=shop_tree.yview, style="Vertical.TScrollbar")
+        scrollbar.grid(row=1, column=1, sticky="ns", pady=(12, 0))
+        shop_tree.configure(yscrollcommand=scrollbar.set)
+
+        current_snapshot: dict[str, PizzaWatchSnapshot | None] = {"value": None}
+
+        def redraw_chart() -> None:
+            snapshot = current_snapshot["value"]
+            chart_canvas.delete("all")
+
+            width = max(chart_canvas.winfo_width(), 420)
+            height = max(chart_canvas.winfo_height(), 280)
+            chart_canvas.create_rectangle(0, 0, width, height, fill="#0a1626", outline="")
+
+            if snapshot is None or not snapshot.shops:
+                chart_canvas.create_text(
+                    width / 2,
+                    height / 2,
+                    text="No pizza watch data yet",
+                    fill="#5f7892",
+                    font=("Segoe UI Semibold", 14),
+                )
+                return
+
+            padding_left = 44
+            padding_right = 24
+            padding_top = 30
+            padding_bottom = 54
+            plot_width = width - padding_left - padding_right
+            plot_height = height - padding_top - padding_bottom
+            max_distance = max(shop.distance_miles for shop in snapshot.shops)
+            bar_gap = 10
+            bar_width = max((plot_width - bar_gap * (len(snapshot.shops) - 1)) / max(len(snapshot.shops), 1), 24)
+
+            chart_canvas.create_line(
+                padding_left,
+                height - padding_bottom,
+                width - padding_right,
+                height - padding_bottom,
+                fill="#284767",
+                width=1,
+            )
+
+            for index, shop in enumerate(snapshot.shops):
+                x0 = padding_left + index * (bar_width + bar_gap)
+                x1 = x0 + bar_width
+                bar_height = plot_height * (shop.distance_miles / max(max_distance, 0.1))
+                y0 = height - padding_bottom - bar_height
+                color = "#33d17a" if shop.status == "OPEN" else "#ff7b72"
+                chart_canvas.create_rectangle(x0, y0, x1, height - padding_bottom, fill=color, outline="")
+                chart_canvas.create_text(
+                    (x0 + x1) / 2,
+                    y0 - 12,
+                    text=f"{shop.distance_miles:.1f}",
+                    fill="#dbe9f6",
+                    font=("Segoe UI", 9),
+                )
+                label = shop.name.replace(" PIZZA", "").replace(" PIZZA PALACE", "")
+                chart_canvas.create_text(
+                    (x0 + x1) / 2,
+                    height - padding_bottom + 18,
+                    text=label[:12],
+                    fill="#7c95af",
+                    font=("Segoe UI", 8),
+                    angle=18,
+                )
+
+            chart_canvas.create_text(
+                padding_left,
+                padding_top - 8,
+                text="Distance from Pentagon (miles)",
+                fill="#7fd4ff",
+                font=("Segoe UI Semibold", 10),
+                anchor="w",
+            )
+
+        def apply_snapshot(snapshot: PizzaWatchSnapshot) -> None:
+            self._pizza_watch_snapshot = snapshot
+            current_snapshot["value"] = snapshot
+            for item in shop_tree.get_children():
+                shop_tree.delete(item)
+            for index, shop in enumerate(snapshot.shops):
+                tag = "even" if index % 2 == 0 else "odd"
+                shop_tree.insert("", "end", values=(shop.name, shop.status, f"{shop.distance_miles:.1f}"), tags=(tag,))
+
+            nearest_shop = min(snapshot.shops, key=lambda shop: shop.distance_miles)
+            doughcon_var.set(str(snapshot.doughcon_level))
+            message_var.set(snapshot.doughcon_title)
+            monitored_var.set(str(snapshot.monitored_locations))
+            nearest_var.set(f"{nearest_shop.distance_miles:.1f} mi")
+            chart_hint_var.set(f"{snapshot.doughcon_message} | {snapshot.site_status}")
+            status_var.set(
+                "PizzINT 快照已更新。這版圖表使用站上可見的店家距離與營業狀態資料。"
+            )
+            redraw_chart()
+            refresh_button.state(["!disabled"])
+
+        def show_error(message: str) -> None:
+            refresh_button.state(["!disabled"])
+            status_var.set(f"PizzINT 載入失敗: {message}")
+
+        def worker(force_refresh: bool) -> None:
+            try:
+                snapshot = self._pizza_watch_snapshot
+                if force_refresh or snapshot is None:
+                    snapshot = fetch_pizza_watch_snapshot()
+                self.root.after(0, lambda: apply_snapshot(snapshot))
+            except Exception as exc:
+                self.root.after(0, lambda message=str(exc): show_error(message))
+
+        def start_refresh(force_refresh: bool) -> None:
+            refresh_button.state(["disabled"])
+            status_var.set("載入 PizzINT 即時快照中...")
+            threading.Thread(target=lambda: worker(force_refresh), daemon=True).start()
+
+        chart_canvas.bind("<Configure>", lambda _event: redraw_chart())
+        refresh_button.configure(command=lambda: start_refresh(True))
+        start_refresh(False)
 
     def open_lottery_window(self) -> None:
         window = tk.Toplevel(self.root)
