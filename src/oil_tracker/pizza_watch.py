@@ -43,6 +43,15 @@ class PizzaWatchStreaks:
     consecutive_weeks: int
 
 
+@dataclass(frozen=True)
+class PizzaWatchHistoryEntry:
+    snapshot_date: date
+    doughcon_level: int
+    monitored_locations: int
+    open_shop_count: int
+    nearest_distance_miles: float
+
+
 def _ssl_context() -> ssl.SSLContext:
     context = ssl.create_default_context()
     context.check_hostname = False
@@ -98,38 +107,86 @@ def parse_pizza_watch_snapshot(html_text: str) -> PizzaWatchSnapshot:
     )
 
 
-def load_pizza_watch_history(path: Path | None = None) -> list[date]:
+def load_pizza_watch_history(path: Path | None = None) -> list[PizzaWatchHistoryEntry]:
     history_path = path or default_pizza_watch_history_path()
     if not history_path.exists():
         return []
     payload = json.loads(history_path.read_text(encoding="utf-8"))
-    values = payload if isinstance(payload, list) else payload.get("dates", [])
-    dates = sorted({date.fromisoformat(str(value)) for value in values})
-    return dates
+    if isinstance(payload, list) and payload and isinstance(payload[0], str):
+        return [
+            PizzaWatchHistoryEntry(
+                snapshot_date=date.fromisoformat(value),
+                doughcon_level=0,
+                monitored_locations=0,
+                open_shop_count=0,
+                nearest_distance_miles=0.0,
+            )
+            for value in sorted(set(str(item) for item in payload))
+        ]
+
+    values = payload if isinstance(payload, list) else payload.get("entries", [])
+    entries: dict[date, PizzaWatchHistoryEntry] = {}
+    for value in values:
+        snapshot_date = date.fromisoformat(str(value["snapshot_date"]))
+        entries[snapshot_date] = PizzaWatchHistoryEntry(
+            snapshot_date=snapshot_date,
+            doughcon_level=int(value.get("doughcon_level", 0)),
+            monitored_locations=int(value.get("monitored_locations", 0)),
+            open_shop_count=int(value.get("open_shop_count", 0)),
+            nearest_distance_miles=float(value.get("nearest_distance_miles", 0.0)),
+        )
+    return [entries[key] for key in sorted(entries)]
 
 
-def save_pizza_watch_history(dates: list[date], path: Path | None = None) -> None:
+def save_pizza_watch_history(entries: list[PizzaWatchHistoryEntry], path: Path | None = None) -> None:
     history_path = path or default_pizza_watch_history_path()
     history_path.parent.mkdir(parents=True, exist_ok=True)
-    serializable = [value.isoformat() for value in sorted(set(dates))]
+    deduped = {entry.snapshot_date: entry for entry in entries}
+    serializable = [
+        {
+            "snapshot_date": entry.snapshot_date.isoformat(),
+            "doughcon_level": entry.doughcon_level,
+            "monitored_locations": entry.monitored_locations,
+            "open_shop_count": entry.open_shop_count,
+            "nearest_distance_miles": entry.nearest_distance_miles,
+        }
+        for entry in (deduped[key] for key in sorted(deduped))
+    ]
     history_path.write_text(json.dumps(serializable, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def update_pizza_watch_history(snapshot: PizzaWatchSnapshot, path: Path | None = None) -> list[date]:
-    dates = load_pizza_watch_history(path)
-    snapshot_date = snapshot.fetched_at.date()
-    if snapshot_date not in dates:
-        dates.append(snapshot_date)
-        dates.sort()
-        save_pizza_watch_history(dates, path)
-    return dates
+def build_history_entry(snapshot: PizzaWatchSnapshot) -> PizzaWatchHistoryEntry:
+    open_shop_count = sum(1 for shop in snapshot.shops if shop.status == "OPEN")
+    nearest_distance = min((shop.distance_miles for shop in snapshot.shops), default=0.0)
+    return PizzaWatchHistoryEntry(
+        snapshot_date=snapshot.fetched_at.date(),
+        doughcon_level=snapshot.doughcon_level,
+        monitored_locations=snapshot.monitored_locations,
+        open_shop_count=open_shop_count,
+        nearest_distance_miles=nearest_distance,
+    )
 
 
-def calculate_pizza_watch_streaks(dates: list[date]) -> PizzaWatchStreaks:
-    if not dates:
+def update_pizza_watch_history(snapshot: PizzaWatchSnapshot, path: Path | None = None) -> list[PizzaWatchHistoryEntry]:
+    entries = load_pizza_watch_history(path)
+    entry = build_history_entry(snapshot)
+    entry_map = {item.snapshot_date: item for item in entries}
+    entry_map[entry.snapshot_date] = entry
+    updated_entries = [entry_map[key] for key in sorted(entry_map)]
+    save_pizza_watch_history(updated_entries, path)
+    return updated_entries
+
+
+def calculate_pizza_watch_streaks(history: list[date] | list[PizzaWatchHistoryEntry]) -> PizzaWatchStreaks:
+    if not history:
         return PizzaWatchStreaks(consecutive_days=0, consecutive_weeks=0)
 
-    ordered_dates = sorted(set(dates))
+    ordered_dates = sorted(
+        {
+            value.snapshot_date if isinstance(value, PizzaWatchHistoryEntry) else value
+            for value in history
+        }
+    )
     consecutive_days = 1
     cursor = ordered_dates[-1]
     for current in reversed(ordered_dates[:-1]):

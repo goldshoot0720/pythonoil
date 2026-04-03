@@ -28,6 +28,7 @@ try:
         save_cached_github_commit_stats,
     )
     from .pizza_watch import (
+        PizzaWatchHistoryEntry,
         PizzaWatchSnapshot,
         calculate_pizza_watch_streaks,
         fetch_pizza_watch_snapshot,
@@ -48,6 +49,7 @@ except ImportError:
         save_cached_github_commit_stats,
     )
     from pizza_watch import (
+        PizzaWatchHistoryEntry,
         PizzaWatchSnapshot,
         calculate_pizza_watch_streaks,
         fetch_pizza_watch_snapshot,
@@ -1473,7 +1475,7 @@ class OilTrackerApp:
         chart_panel.grid(row=3, column=0, sticky="nsew", padx=(0, 14), pady=(16, 0))
         chart_panel.columnconfigure(0, weight=1)
         chart_panel.rowconfigure(1, weight=1)
-        ttk.Label(chart_panel, text="Pentagon Pizza Distance Chart", style="ChartTitle.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(chart_panel, text="PizzINT History Chart", style="ChartTitle.TLabel").grid(row=0, column=0, sticky="w")
 
         chart_hint_var = tk.StringVar(value="等待資料")
         ttk.Label(chart_panel, textvariable=chart_hint_var, style="ChartHint.TLabel").grid(row=0, column=1, sticky="e")
@@ -1535,16 +1537,18 @@ class OilTrackerApp:
         shop_tree.configure(yscrollcommand=scrollbar.set)
 
         current_snapshot: dict[str, PizzaWatchSnapshot | None] = {"value": None}
+        history_entries: dict[str, list[PizzaWatchHistoryEntry]] = {"value": []}
 
         def redraw_chart() -> None:
             snapshot = current_snapshot["value"]
+            entries = history_entries["value"]
             chart_canvas.delete("all")
 
             width = max(chart_canvas.winfo_width(), 420)
             height = max(chart_canvas.winfo_height(), 280)
             chart_canvas.create_rectangle(0, 0, width, height, fill="#0a1626", outline="")
 
-            if snapshot is None or not snapshot.shops:
+            if snapshot is None:
                 chart_canvas.create_text(
                     width / 2,
                     height / 2,
@@ -1554,15 +1558,25 @@ class OilTrackerApp:
                 )
                 return
 
-            padding_left = 44
+            padding_left = 54
             padding_right = 24
-            padding_top = 30
-            padding_bottom = 54
+            padding_top = 34
+            padding_bottom = 58
             plot_width = width - padding_left - padding_right
             plot_height = height - padding_top - padding_bottom
-            max_distance = max(shop.distance_miles for shop in snapshot.shops)
-            bar_gap = 10
-            bar_width = max((plot_width - bar_gap * (len(snapshot.shops) - 1)) / max(len(snapshot.shops), 1), 24)
+            if not entries:
+                chart_canvas.create_text(
+                    width / 2,
+                    height / 2,
+                    text="Waiting for pizza history",
+                    fill="#5f7892",
+                    font=("Segoe UI Semibold", 14),
+                )
+                return
+
+            doughcon_max = max(max(entry.doughcon_level for entry in entries), 1)
+            open_max = max(max(entry.open_shop_count for entry in entries), 1)
+            step_width = plot_width / max(len(entries) - 1, 1)
 
             chart_canvas.create_line(
                 padding_left,
@@ -1572,36 +1586,72 @@ class OilTrackerApp:
                 fill="#284767",
                 width=1,
             )
+            midline_y = padding_top + plot_height * 0.45
+            chart_canvas.create_line(
+                padding_left,
+                midline_y,
+                width - padding_right,
+                midline_y,
+                fill="#15304b",
+                width=1,
+                dash=(4, 4),
+            )
 
-            for index, shop in enumerate(snapshot.shops):
-                x0 = padding_left + index * (bar_width + bar_gap)
-                x1 = x0 + bar_width
-                bar_height = plot_height * (shop.distance_miles / max(max_distance, 0.1))
+            points: list[float] = []
+            bar_width = max(min(step_width * 0.45, 28), 12)
+            for index, entry in enumerate(entries):
+                x = padding_left + index * step_width
+                doughcon_y = padding_top + (midline_y - padding_top) * (1 - (entry.doughcon_level / doughcon_max))
+                points.extend((x, doughcon_y))
+
+                x0 = x - bar_width / 2
+                x1 = x + bar_width / 2
+                bar_height = (height - padding_bottom - (midline_y + 16)) * (entry.open_shop_count / open_max)
                 y0 = height - padding_bottom - bar_height
-                color = "#33d17a" if shop.status == "OPEN" else "#ff7b72"
+                color = "#33d17a" if entry.open_shop_count > 0 else "#ff7b72"
                 chart_canvas.create_rectangle(x0, y0, x1, height - padding_bottom, fill=color, outline="")
                 chart_canvas.create_text(
-                    (x0 + x1) / 2,
+                    x,
                     y0 - 12,
-                    text=f"{shop.distance_miles:.1f}",
+                    text=str(entry.open_shop_count),
                     fill="#dbe9f6",
                     font=("Segoe UI", 9),
                 )
-                label = shop.name.replace(" PIZZA", "").replace(" PIZZA PALACE", "")
                 chart_canvas.create_text(
-                    (x0 + x1) / 2,
+                    x,
                     height - padding_bottom + 18,
-                    text=label[:12],
+                    text=entry.snapshot_date.strftime("%m-%d"),
                     fill="#7c95af",
                     font=("Segoe UI", 8),
-                    angle=18,
+                )
+
+            if len(points) >= 4:
+                chart_canvas.create_line(*points, fill="#7fd4ff", width=3, smooth=True)
+            for index, entry in enumerate(entries):
+                x = padding_left + index * step_width
+                doughcon_y = padding_top + (midline_y - padding_top) * (1 - (entry.doughcon_level / doughcon_max))
+                chart_canvas.create_oval(x - 4, doughcon_y - 4, x + 4, doughcon_y + 4, fill="#7fd4ff", outline="#0a1626", width=2)
+                chart_canvas.create_text(
+                    x,
+                    doughcon_y - 14,
+                    text=f"D{entry.doughcon_level}",
+                    fill="#dbe9f6",
+                    font=("Segoe UI", 8),
                 )
 
             chart_canvas.create_text(
                 padding_left,
                 padding_top - 8,
-                text="Distance from Pentagon (miles)",
+                text="Doughcon trend",
                 fill="#7fd4ff",
+                font=("Segoe UI Semibold", 10),
+                anchor="w",
+            )
+            chart_canvas.create_text(
+                padding_left,
+                midline_y + 10,
+                text="Open shops by day",
+                fill="#33d17a",
                 font=("Segoe UI Semibold", 10),
                 anchor="w",
             )
@@ -1609,7 +1659,9 @@ class OilTrackerApp:
         def apply_snapshot(snapshot: PizzaWatchSnapshot) -> None:
             self._pizza_watch_snapshot = snapshot
             current_snapshot["value"] = snapshot
-            streaks = calculate_pizza_watch_streaks(update_pizza_watch_history(snapshot))
+            updated_history = update_pizza_watch_history(snapshot)
+            history_entries["value"] = updated_history[-14:]
+            streaks = calculate_pizza_watch_streaks(updated_history)
             for item in shop_tree.get_children():
                 shop_tree.delete(item)
             for index, shop in enumerate(snapshot.shops):
@@ -1623,7 +1675,7 @@ class OilTrackerApp:
             nearest_var.set(f"{nearest_shop.distance_miles:.1f} mi")
             streak_days_var.set(str(streaks.consecutive_days))
             streak_weeks_var.set(str(streaks.consecutive_weeks))
-            chart_hint_var.set(f"{snapshot.doughcon_message} | {snapshot.site_status}")
+            chart_hint_var.set(f"{snapshot.doughcon_message} | {snapshot.site_status} | {len(history_entries['value'])} day chart")
             status_var.set(
                 f"PizzINT 快照已更新。連續 {streaks.consecutive_days} 天 / {streaks.consecutive_weeks} 週有監控紀錄。"
             )
