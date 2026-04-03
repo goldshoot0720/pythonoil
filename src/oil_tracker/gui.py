@@ -234,6 +234,12 @@ class OilTrackerApp:
             font=("Consolas", 10),
         )
         self.style.configure(
+            "AsciiHero.TLabel",
+            background="#0b1628",
+            foreground="#7fd4ff",
+            font=("Consolas", 10),
+        )
+        self.style.configure(
             "ChartTitle.TLabel",
             background="#0a1626",
             foreground="#f3fbff",
@@ -338,8 +344,22 @@ class OilTrackerApp:
             justify="left",
         ).grid(row=2, column=0, sticky="w", pady=(10, 0))
 
+        hero_ascii = (
+            "   ____                   \n"
+            "  / __ \\____ ___  ___ ___ \n"
+            " / /_/ / __ `__ \\/ -_) _ \\\n"
+            "/ .___/\\__,_/ /_/\\__/_//_/\n"
+            "/_/   feng bro\n"
+        )
+        ttk.Label(
+            header,
+            text=hero_ascii,
+            style="AsciiHero.TLabel",
+            justify="left",
+        ).grid(row=3, column=0, sticky="w", pady=(12, 0))
+
         hero_meta = ttk.Frame(header, style="Hero.TFrame")
-        hero_meta.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=(24, 0))
+        hero_meta.grid(row=0, column=1, rowspan=4, sticky="nsew", padx=(24, 0))
         hero_meta.columnconfigure(0, weight=1)
         hero_meta.columnconfigure(1, weight=1)
 
