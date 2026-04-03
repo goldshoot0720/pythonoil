@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import html
+import json
+from pathlib import Path
 import re
 import ssl
 import urllib.request
+
+try:
+    from .paths import default_pizza_watch_history_path
+except ImportError:
+    from paths import default_pizza_watch_history_path
 
 
 PIZZA_WATCH_URL = "https://www.pizzint.watch/"
@@ -28,6 +35,12 @@ class PizzaWatchSnapshot:
     site_status: str
     shops: tuple[PizzaWatchShop, ...]
     source_url: str = PIZZA_WATCH_URL
+
+
+@dataclass(frozen=True)
+class PizzaWatchStreaks:
+    consecutive_days: int
+    consecutive_weeks: int
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -83,3 +96,57 @@ def parse_pizza_watch_snapshot(html_text: str) -> PizzaWatchSnapshot:
         site_status=site_status_match.group(1).strip(),
         shops=shops,
     )
+
+
+def load_pizza_watch_history(path: Path | None = None) -> list[date]:
+    history_path = path or default_pizza_watch_history_path()
+    if not history_path.exists():
+        return []
+    payload = json.loads(history_path.read_text(encoding="utf-8"))
+    values = payload if isinstance(payload, list) else payload.get("dates", [])
+    dates = sorted({date.fromisoformat(str(value)) for value in values})
+    return dates
+
+
+def save_pizza_watch_history(dates: list[date], path: Path | None = None) -> None:
+    history_path = path or default_pizza_watch_history_path()
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    serializable = [value.isoformat() for value in sorted(set(dates))]
+    history_path.write_text(json.dumps(serializable, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def update_pizza_watch_history(snapshot: PizzaWatchSnapshot, path: Path | None = None) -> list[date]:
+    dates = load_pizza_watch_history(path)
+    snapshot_date = snapshot.fetched_at.date()
+    if snapshot_date not in dates:
+        dates.append(snapshot_date)
+        dates.sort()
+        save_pizza_watch_history(dates, path)
+    return dates
+
+
+def calculate_pizza_watch_streaks(dates: list[date]) -> PizzaWatchStreaks:
+    if not dates:
+        return PizzaWatchStreaks(consecutive_days=0, consecutive_weeks=0)
+
+    ordered_dates = sorted(set(dates))
+    consecutive_days = 1
+    cursor = ordered_dates[-1]
+    for current in reversed(ordered_dates[:-1]):
+        if current == cursor - timedelta(days=1):
+            consecutive_days += 1
+            cursor = current
+            continue
+        break
+
+    week_starts = sorted({value - timedelta(days=value.weekday()) for value in ordered_dates})
+    consecutive_weeks = 1
+    cursor_week = week_starts[-1]
+    for current in reversed(week_starts[:-1]):
+        if current == cursor_week - timedelta(days=7):
+            consecutive_weeks += 1
+            cursor_week = current
+            continue
+        break
+
+    return PizzaWatchStreaks(consecutive_days=consecutive_days, consecutive_weeks=consecutive_weeks)

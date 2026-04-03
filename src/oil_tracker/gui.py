@@ -27,7 +27,12 @@ try:
         load_cached_github_commit_stats,
         save_cached_github_commit_stats,
     )
-    from .pizza_watch import PizzaWatchSnapshot, fetch_pizza_watch_snapshot
+    from .pizza_watch import (
+        PizzaWatchSnapshot,
+        calculate_pizza_watch_streaks,
+        fetch_pizza_watch_snapshot,
+        update_pizza_watch_history,
+    )
     from .settings import AppSettings, load_settings, save_settings
     from .storage import OilPriceRepository, SaveResult
     from .taiwan_lottery import GAME_CONFIGS, build_group_summaries, fetch_all_lottery_draws
@@ -42,7 +47,12 @@ except ImportError:
         load_cached_github_commit_stats,
         save_cached_github_commit_stats,
     )
-    from pizza_watch import PizzaWatchSnapshot, fetch_pizza_watch_snapshot
+    from pizza_watch import (
+        PizzaWatchSnapshot,
+        calculate_pizza_watch_streaks,
+        fetch_pizza_watch_snapshot,
+        update_pizza_watch_history,
+    )
     from settings import AppSettings, load_settings, save_settings
     from storage import OilPriceRepository, SaveResult
     from taiwan_lottery import GAME_CONFIGS, build_group_summaries, fetch_all_lottery_draws
@@ -1478,19 +1488,23 @@ class OilTrackerApp:
 
         summary_panel = ttk.Frame(side_panel, style="StatsPanel.TFrame", padding=16)
         summary_panel.grid(row=0, column=0, sticky="ew")
-        for index in range(4):
+        for index in range(6):
             summary_panel.columnconfigure(index, weight=1)
 
         doughcon_var = tk.StringVar(value="-")
         message_var = tk.StringVar(value="-")
         monitored_var = tk.StringVar(value="-")
         nearest_var = tk.StringVar(value="-")
+        streak_days_var = tk.StringVar(value="-")
+        streak_weeks_var = tk.StringVar(value="-")
         for column, (label, variable) in enumerate(
             (
                 ("Doughcon", doughcon_var),
                 ("Watch", message_var),
                 ("Locations", monitored_var),
                 ("Nearest", nearest_var),
+                ("連續天數", streak_days_var),
+                ("連續週數", streak_weeks_var),
             )
         ):
             block = ttk.Frame(summary_panel, style="StatsPanel.TFrame")
@@ -1595,6 +1609,7 @@ class OilTrackerApp:
         def apply_snapshot(snapshot: PizzaWatchSnapshot) -> None:
             self._pizza_watch_snapshot = snapshot
             current_snapshot["value"] = snapshot
+            streaks = calculate_pizza_watch_streaks(update_pizza_watch_history(snapshot))
             for item in shop_tree.get_children():
                 shop_tree.delete(item)
             for index, shop in enumerate(snapshot.shops):
@@ -1606,9 +1621,11 @@ class OilTrackerApp:
             message_var.set(snapshot.doughcon_title)
             monitored_var.set(str(snapshot.monitored_locations))
             nearest_var.set(f"{nearest_shop.distance_miles:.1f} mi")
+            streak_days_var.set(str(streaks.consecutive_days))
+            streak_weeks_var.set(str(streaks.consecutive_weeks))
             chart_hint_var.set(f"{snapshot.doughcon_message} | {snapshot.site_status}")
             status_var.set(
-                "PizzINT 快照已更新。這版圖表使用站上可見的店家距離與營業狀態資料。"
+                f"PizzINT 快照已更新。連續 {streaks.consecutive_days} 天 / {streaks.consecutive_weeks} 週有監控紀錄。"
             )
             redraw_chart()
             refresh_button.state(["!disabled"])

@@ -36,3 +36,7 @@ def default_creative_notes_path() -> Path:
 
 def default_creative_vector_art_path() -> Path:
     return app_base_dir() / "data" / "creative_vector_art.svg"
+
+
+def default_pizza_watch_history_path() -> Path:
+    return app_base_dir() / "data" / "pizza_watch_history.json"
