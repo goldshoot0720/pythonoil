@@ -228,6 +228,12 @@ class OilTrackerApp:
             font=("Segoe UI", 10),
         )
         self.style.configure(
+            "Ascii.TLabel",
+            background="#0c1a2d",
+            foreground="#7fd4ff",
+            font=("Consolas", 10),
+        )
+        self.style.configure(
             "ChartTitle.TLabel",
             background="#0a1626",
             foreground="#f3fbff",
@@ -426,6 +432,20 @@ class OilTrackerApp:
             wraplength=320,
             justify="left",
         ).grid(row=3, column=0, sticky="w", pady=(6, 0))
+
+        ascii_art = (
+            "   ____                   \n"
+            "  / __ \\____ ___  ___ ___ \n"
+            " / /_/ / __ `__ \\/ -_) _ \\\n"
+            "/ .___/\\__,_/ /_/\\__/_//_/\n"
+            "/_/   feng bro\n"
+        )
+        ttk.Label(
+            insight_panel,
+            text=ascii_art,
+            style="Ascii.TLabel",
+            justify="left",
+        ).grid(row=4, column=0, sticky="w", pady=(12, 0))
 
         footer = ttk.Frame(container, style="Root.TFrame")
         footer.grid(row=content_row + 1, column=0, sticky="ew", pady=(12, 0))
