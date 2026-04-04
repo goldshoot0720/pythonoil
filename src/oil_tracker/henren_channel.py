@@ -23,6 +23,7 @@ HENREN_JINA_URLS = (
 HENREN_OEMBED_URL = "https://www.youtube.com/oembed?url={target}&format=json"
 HENREN_USER_FEED_URL = "https://www.youtube.com/feeds/videos.xml?user=henren778"
 HENREN_FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+HENREN_CHANNEL_ID = "UCJAPsTtcJJWGk8e-_CJL8TQ"
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,13 @@ def fetch_henren_snapshot(limit: int = 12, timeout: int = 20) -> HenrenSnapshot:
     last_error: Exception | None = None
     try:
         xml_text = _fetch_text(HENREN_USER_FEED_URL, timeout=timeout)
+        return parse_henren_feed(xml_text, limit=limit)
+    except Exception as exc:
+        last_error = exc
+
+    try:
+        feed_url = HENREN_FEED_URL.format(channel_id=HENREN_CHANNEL_ID)
+        xml_text = _fetch_text(feed_url, timeout=timeout)
         return parse_henren_feed(xml_text, limit=limit)
     except Exception as exc:
         last_error = exc
