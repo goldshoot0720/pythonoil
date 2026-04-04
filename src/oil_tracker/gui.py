@@ -1915,6 +1915,14 @@ class OilTrackerApp:
             sticky="w",
             pady=(12, 0),
         )
+        headline = "供不應求！布蘭特原油現貨曾破141美元　創2008年以來高"
+        ttk.Label(container, text=headline, style="Status.TLabel", wraplength=1020, justify="left").grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(36, 0),
+        )
 
         chart_panel = ttk.Frame(container, style="ChartPanel.TFrame", padding=18)
         chart_panel.grid(row=3, column=0, sticky="nsew", padx=(0, 14), pady=(16, 0))
@@ -2032,6 +2040,26 @@ class OilTrackerApp:
                 fill="#284767",
                 width=1,
             )
+            ref_price = 141.0
+            if lower <= ref_price <= upper:
+                ref_y = y_for(ref_price)
+                chart_canvas.create_line(
+                    padding_left,
+                    ref_y,
+                    width - padding_right,
+                    ref_y,
+                    fill="#ffb347",
+                    width=2,
+                    dash=(6, 4),
+                )
+                chart_canvas.create_text(
+                    width - padding_right - 6,
+                    ref_y - 10,
+                    text="141 (2008 high)",
+                    fill="#ffcf99",
+                    font=("Segoe UI Semibold", 9),
+                    anchor="e",
+                )
 
             points_line: list[float] = []
             for index, point in enumerate(points):
