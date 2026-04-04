@@ -8,7 +8,12 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 
-HENREN_HANDLE_URL = "https://www.youtube.com/@henren778/videos"
+HENREN_HANDLE_URL = "https://www.youtube.com/@henren778"
+HENREN_HANDLE_URLS = (
+    "https://www.youtube.com/@henren778",
+    "https://www.youtube.com/@henren778/featured",
+    "https://www.youtube.com/@henren778/videos",
+)
 HENREN_FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
 
@@ -62,7 +67,7 @@ def fetch_henren_snapshot(limit: int = 12, timeout: int = 20) -> HenrenSnapshot:
 
 
 def fetch_channel_id_from_handle(timeout: int = 20) -> str:
-    html_text = _fetch_text(HENREN_HANDLE_URL, timeout=timeout)
+    html_text = _fetch_handle_html(timeout=timeout)
     match = re.search(r"channelId\":\"(UC[^\"]+)\"", html_text)
     if not match:
         match = re.search(r"externalId\":\"(UC[^\"]+)\"", html_text)
@@ -71,6 +76,19 @@ def fetch_channel_id_from_handle(timeout: int = 20) -> str:
     if not match:
         raise ValueError("無法解析 YouTube channel ID")
     return match.group(1)
+
+
+def _fetch_handle_html(timeout: int = 20) -> str:
+    last_error: Exception | None = None
+    for url in HENREN_HANDLE_URLS:
+        try:
+            return _fetch_text(url, timeout=timeout)
+        except Exception as exc:
+            last_error = exc
+            continue
+    if last_error:
+        raise last_error
+    raise ValueError("無法取得 YouTube 頻道資訊")
 
 
 def parse_henren_feed(xml_text: str, limit: int = 12) -> HenrenSnapshot:
