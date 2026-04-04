@@ -22,7 +22,12 @@ HENREN_JINA_URLS = (
 )
 HENREN_OEMBED_URL = "https://www.youtube.com/oembed?url={target}&format=json"
 HENREN_USER_FEED_URL = "https://www.youtube.com/feeds/videos.xml?user=henren778"
-HENREN_FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+HENREN_FEED_URLS = (
+    "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
+    "https://www.youtube-nocookie.com/feeds/videos.xml?channel_id={channel_id}",
+    "https://yewtu.be/feed/channel/{channel_id}",
+    "https://vid.puffyan.us/feed/channel/{channel_id}",
+)
 HENREN_CHANNEL_ID = "UCJAPsTtcJJWGk8e-_CJL8TQ"
 
 
@@ -77,23 +82,34 @@ def fetch_henren_snapshot(limit: int = 12, timeout: int = 20) -> HenrenSnapshot:
         last_error = exc
 
     try:
-        feed_url = HENREN_FEED_URL.format(channel_id=HENREN_CHANNEL_ID)
-        xml_text = _fetch_text(feed_url, timeout=timeout)
-        return parse_henren_feed(xml_text, limit=limit)
+        return _fetch_from_channel_id(HENREN_CHANNEL_ID, timeout=timeout, limit=limit)
     except Exception as exc:
         last_error = exc
 
     try:
         channel_id = fetch_channel_id_from_handle(timeout=timeout)
-        feed_url = HENREN_FEED_URL.format(channel_id=channel_id)
-        xml_text = _fetch_text(feed_url, timeout=timeout)
-        return parse_henren_feed(xml_text, limit=limit)
+        return _fetch_from_channel_id(channel_id, timeout=timeout, limit=limit)
     except Exception as exc:
         last_error = exc
 
     if last_error:
         raise last_error
     raise ValueError("無法取得 YouTube 影片列表")
+
+
+def _fetch_from_channel_id(channel_id: str, timeout: int, limit: int) -> HenrenSnapshot:
+    last_error: Exception | None = None
+    for template in HENREN_FEED_URLS:
+        feed_url = template.format(channel_id=channel_id)
+        try:
+            xml_text = _fetch_text(feed_url, timeout=timeout)
+            return parse_henren_feed(xml_text, limit=limit)
+        except Exception as exc:
+            last_error = exc
+            continue
+    if last_error:
+        raise last_error
+    raise ValueError("無法取得頻道 RSS")
 
 
 def fetch_channel_id_from_handle(timeout: int = 20) -> str:
