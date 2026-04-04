@@ -14,6 +14,7 @@ HENREN_HANDLE_URLS = (
     "https://www.youtube.com/@henren778/featured",
     "https://www.youtube.com/@henren778/videos",
 )
+HENREN_USER_FEED_URL = "https://www.youtube.com/feeds/videos.xml?user=henren778"
 HENREN_FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
 
@@ -60,10 +61,24 @@ def _parse_iso_datetime(value: str) -> datetime:
 
 
 def fetch_henren_snapshot(limit: int = 12, timeout: int = 20) -> HenrenSnapshot:
-    channel_id = fetch_channel_id_from_handle(timeout=timeout)
-    feed_url = HENREN_FEED_URL.format(channel_id=channel_id)
-    xml_text = _fetch_text(feed_url, timeout=timeout)
-    return parse_henren_feed(xml_text, limit=limit)
+    last_error: Exception | None = None
+    try:
+        xml_text = _fetch_text(HENREN_USER_FEED_URL, timeout=timeout)
+        return parse_henren_feed(xml_text, limit=limit)
+    except Exception as exc:
+        last_error = exc
+
+    try:
+        channel_id = fetch_channel_id_from_handle(timeout=timeout)
+        feed_url = HENREN_FEED_URL.format(channel_id=channel_id)
+        xml_text = _fetch_text(feed_url, timeout=timeout)
+        return parse_henren_feed(xml_text, limit=limit)
+    except Exception as exc:
+        last_error = exc
+
+    if last_error:
+        raise last_error
+    raise ValueError("無法取得 YouTube 影片列表")
 
 
 def fetch_channel_id_from_handle(timeout: int = 20) -> str:
