@@ -34,6 +34,7 @@ try:
     )
     from .dram_spot import DRAM_SPOT_URL, DramSpotSnapshot, fetch_dram_spot_snapshot
     from .polymarket_event import PolymarketEvent, fetch_polymarket_event, POLYMARKET_EVENT_URL
+    from .henren_channel import HENREN_HANDLE_URL, HenrenSnapshot, fetch_henren_snapshot
     from .fragile_states_index import FSIChinaPoint, fetch_fsi_china_series
     from .pizza_watch import (
         PizzaWatchHistoryEntry,
@@ -63,6 +64,7 @@ except ImportError:
     )
     from dram_spot import DRAM_SPOT_URL, DramSpotSnapshot, fetch_dram_spot_snapshot
     from polymarket_event import PolymarketEvent, fetch_polymarket_event, POLYMARKET_EVENT_URL
+    from henren_channel import HENREN_HANDLE_URL, HenrenSnapshot, fetch_henren_snapshot
     from fragile_states_index import FSIChinaPoint, fetch_fsi_china_series
     from pizza_watch import (
         PizzaWatchHistoryEntry,
@@ -607,6 +609,7 @@ class OilTrackerApp:
         menu_bar.add_command(label="Fragile States China", command=self.open_fsi_china_window)
         menu_bar.add_command(label="DRAM 現貨價格", command=self.open_dram_spot_window)
         menu_bar.add_command(label="Polymarket Iran", command=self.open_polymarket_iran_window)
+        menu_bar.add_command(label="一个狠人", command=self.open_henren_window)
         self.root.configure(menu=menu_bar)
 
     def open_creative_studio(self) -> None:
@@ -2855,6 +2858,267 @@ class OilTrackerApp:
 
         chart_canvas.bind("<Configure>", lambda _event: redraw_chart())
         april_canvas.bind("<Configure>", lambda _event: redraw_april_bar())
+        refresh_button.configure(command=lambda: start_refresh(True))
+        start_refresh(False)
+
+    def open_henren_window(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("一个狠人 倒台指數")
+        window.geometry("1120x760")
+        window.minsize(960, 640)
+        window.configure(bg="#07111f")
+
+        container = ttk.Frame(window, style="Root.TFrame", padding=20)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=3)
+        container.columnconfigure(1, weight=2)
+        container.rowconfigure(3, weight=1)
+
+        ttk.Label(container, text="一个狠人 / 倒台指數", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        source_link = ttk.Label(container, text=HENREN_HANDLE_URL, style="Link.TLabel", cursor="hand2")
+        source_link.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        source_link.bind("<Button-1>", lambda _event: webbrowser.open_new_tab(HENREN_HANDLE_URL))
+
+        header_actions = ttk.Frame(container, style="Root.TFrame")
+        header_actions.grid(row=0, column=1, sticky="e")
+        refresh_button = ttk.Button(header_actions, text="Refresh")
+        refresh_button.pack(anchor="e")
+
+        status_var = tk.StringVar(value="準備載入 一个狠人 影片列表...")
+        ttk.Label(container, textvariable=status_var, style="Status.TLabel", wraplength=1040, justify="left").grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(12, 0),
+        )
+
+        chart_panel = ttk.Frame(container, style="ChartPanel.TFrame", padding=18)
+        chart_panel.grid(row=3, column=0, sticky="nsew", padx=(0, 14), pady=(16, 0))
+        chart_panel.columnconfigure(0, weight=1)
+        chart_panel.rowconfigure(1, weight=1)
+        ttk.Label(chart_panel, text="倒台指數（距離上片天數）", style="ChartTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+
+        chart_hint_var = tk.StringVar(value="等待資料")
+        ttk.Label(chart_panel, textvariable=chart_hint_var, style="ChartHint.TLabel").grid(row=0, column=1, sticky="e")
+
+        chart_canvas = tk.Canvas(chart_panel, bg="#0a1626", highlightthickness=0)
+        chart_canvas.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(14, 0))
+
+        side_panel = ttk.Frame(container, style="Root.TFrame")
+        side_panel.grid(row=3, column=1, sticky="nsew", pady=(16, 0))
+        side_panel.columnconfigure(0, weight=1)
+        side_panel.rowconfigure(2, weight=1)
+
+        summary_panel = ttk.Frame(side_panel, style="StatsPanel.TFrame", padding=16)
+        summary_panel.grid(row=0, column=0, sticky="ew")
+        for index in range(2):
+            summary_panel.columnconfigure(index, weight=1)
+
+        channel_var = tk.StringVar(value="-")
+        updated_var = tk.StringVar(value="-")
+        for column, (label, variable) in enumerate((("Channel", channel_var), ("Updated", updated_var))):
+            block = ttk.Frame(summary_panel, style="StatsPanel.TFrame")
+            block.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 10, 0))
+            block.columnconfigure(0, weight=1)
+            ttk.Label(block, text=label, style="StatsLabel.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(block, textvariable=variable, style="StatsValue.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+        snapshot_panel = ttk.Frame(side_panel, style="StatsPanel.TFrame", padding=16)
+        snapshot_panel.grid(row=1, column=0, sticky="ew", pady=(14, 0))
+        snapshot_panel.columnconfigure(0, weight=1)
+        snapshot_panel.columnconfigure(1, weight=1)
+        ttk.Label(snapshot_panel, text="倒台指數均值", style="StatsLabel.TLabel").grid(row=0, column=0, sticky="w")
+        avg_index_var = tk.StringVar(value="-")
+        ttk.Label(snapshot_panel, textvariable=avg_index_var, style="StatsValue.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(8, 0)
+        )
+        thumb_label_var = tk.StringVar(value="影片截圖")
+        thumb_label = ttk.Label(snapshot_panel, textvariable=thumb_label_var, style="StatsLabel.TLabel", cursor="hand2")
+        thumb_label.grid(row=0, column=1, rowspan=2, sticky="e")
+
+        table_panel = ttk.Frame(side_panel, style="Panel.TFrame", padding=16)
+        table_panel.grid(row=2, column=0, sticky="nsew", pady=(14, 0))
+        table_panel.columnconfigure(0, weight=1)
+        table_panel.rowconfigure(1, weight=1)
+        ttk.Label(table_panel, text="影片列表", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+
+        video_tree = ttk.Treeview(
+            table_panel,
+            columns=("date", "index", "title"),
+            show="headings",
+            height=12,
+        )
+        video_tree.heading("date", text="Date")
+        video_tree.heading("index", text="倒台指數")
+        video_tree.heading("title", text="Title")
+        video_tree.column("date", width=90, anchor="center")
+        video_tree.column("index", width=80, anchor="center")
+        video_tree.column("title", width=240, anchor="w")
+        video_tree.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        video_tree.tag_configure("even", background="#0d1b2d")
+        video_tree.tag_configure("odd", background="#102238")
+
+        scrollbar = ttk.Scrollbar(table_panel, orient="vertical", command=video_tree.yview, style="Vertical.TScrollbar")
+        scrollbar.grid(row=1, column=1, sticky="ns", pady=(12, 0))
+        video_tree.configure(yscrollcommand=scrollbar.set)
+
+        action_row = ttk.Frame(table_panel, style="Panel.TFrame")
+        action_row.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        action_row.columnconfigure(0, weight=1)
+        action_row.columnconfigure(1, weight=1)
+        video_button = ttk.Button(action_row, text="開影片")
+        thumb_button = ttk.Button(action_row, text="開截圖")
+        video_button.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        thumb_button.grid(row=0, column=1, sticky="ew", padx=(8, 0))
+
+        snapshot_cache: dict[str, HenrenSnapshot | None] = {"value": None}
+        video_link_map: dict[str, tuple[str, str]] = {}
+
+        def redraw_chart() -> None:
+            snapshot = snapshot_cache["value"]
+            chart_canvas.delete("all")
+            width = max(chart_canvas.winfo_width(), 420)
+            height = max(chart_canvas.winfo_height(), 280)
+            chart_canvas.create_rectangle(0, 0, width, height, fill="#0a1626", outline="")
+
+            if snapshot is None or not snapshot.videos:
+                chart_canvas.create_text(
+                    width / 2,
+                    height / 2,
+                    text="No video data yet",
+                    fill="#5f7892",
+                    font=("Segoe UI Semibold", 14),
+                )
+                return
+
+            now = datetime.now(snapshot.videos[0].published.tzinfo)
+            indices = [max((now - video.published).days, 0) for video in snapshot.videos[:8]]
+            max_index = max(indices) if indices else 1
+
+            padding_left = 54
+            padding_right = 24
+            padding_top = 34
+            padding_bottom = 54
+            plot_width = width - padding_left - padding_right
+            plot_height = height - padding_top - padding_bottom
+
+            bar_gap = 10
+            bar_width = max((plot_width - bar_gap * (len(indices) - 1)) / max(len(indices), 1), 24)
+
+            chart_canvas.create_line(
+                padding_left,
+                height - padding_bottom,
+                width - padding_right,
+                height - padding_bottom,
+                fill="#284767",
+                width=1,
+            )
+
+            for index, video in enumerate(snapshot.videos[:8]):
+                value = indices[index]
+                x0 = padding_left + index * (bar_width + bar_gap)
+                x1 = x0 + bar_width
+                bar_height = plot_height * (value / max(max_index, 1))
+                y0 = height - padding_bottom - bar_height
+                chart_canvas.create_rectangle(x0, y0, x1, height - padding_bottom, fill="#7fd4ff", outline="")
+                chart_canvas.create_text(
+                    (x0 + x1) / 2,
+                    y0 - 12,
+                    text=f"{value}d",
+                    fill="#dbe9f6",
+                    font=("Segoe UI", 9),
+                )
+                chart_canvas.create_text(
+                    (x0 + x1) / 2,
+                    height - padding_bottom + 18,
+                    text=video.published.strftime("%m-%d"),
+                    fill="#7c95af",
+                    font=("Segoe UI", 8),
+                )
+
+            chart_canvas.create_text(
+                padding_left,
+                padding_top - 8,
+                text="Days since publish",
+                fill="#7fd4ff",
+                font=("Segoe UI Semibold", 10),
+                anchor="w",
+            )
+
+        def apply_snapshot(snapshot: HenrenSnapshot) -> None:
+            snapshot_cache["value"] = snapshot
+            for item in video_tree.get_children():
+                video_tree.delete(item)
+            video_link_map.clear()
+
+            now = datetime.now(snapshot.videos[0].published.tzinfo) if snapshot.videos else datetime.now()
+            indices = []
+            for index, video in enumerate(snapshot.videos):
+                days = max((now - video.published).days, 0)
+                indices.append(days)
+                tag = "even" if index % 2 == 0 else "odd"
+                item_id = video_tree.insert(
+                    "",
+                    "end",
+                    values=(video.published.strftime("%Y-%m-%d"), f"{days}d", video.title[:40]),
+                    tags=(tag,),
+                )
+                video_link_map[item_id] = (video.link, video.thumbnail_url)
+
+            channel_var.set(snapshot.channel_title)
+            updated_var.set(snapshot.updated.strftime("%Y-%m-%d %H:%M") if snapshot.updated else "-")
+            avg_index_var.set(f"{sum(indices) / len(indices):.1f}d" if indices else "-")
+            chart_hint_var.set(f"{len(snapshot.videos)} videos")
+            status_var.set("影片資料已更新。")
+            redraw_chart()
+            refresh_button.state(["!disabled"])
+
+        def show_error(message: str) -> None:
+            refresh_button.state(["!disabled"])
+            status_var.set(f"影片載入失敗: {message}")
+
+        def select_links() -> tuple[str | None, str | None]:
+            selection = video_tree.selection()
+            if not selection:
+                return None, None
+            return video_link_map.get(selection[0], ("", ""))
+
+        def open_video() -> None:
+            link, _thumb = select_links()
+            if link:
+                webbrowser.open_new_tab(link)
+
+        def open_thumb() -> None:
+            _link, thumb = select_links()
+            if thumb:
+                webbrowser.open_new_tab(thumb)
+
+        def update_thumb_label(_event: tk.Event | None = None) -> None:
+            _link, thumb = select_links()
+            thumb_label_var.set("影片截圖" if not thumb else "截圖連結已就緒")
+
+        def worker(force_refresh: bool) -> None:
+            try:
+                snapshot = snapshot_cache["value"]
+                if force_refresh or snapshot is None:
+                    snapshot = fetch_henren_snapshot()
+                self.root.after(0, lambda: apply_snapshot(snapshot))
+            except Exception as exc:
+                self.root.after(0, lambda message=str(exc): show_error(message))
+
+        def start_refresh(force_refresh: bool) -> None:
+            refresh_button.state(["disabled"])
+            status_var.set("載入 影片中...")
+            threading.Thread(target=lambda: worker(force_refresh), daemon=True).start()
+
+        chart_canvas.bind("<Configure>", lambda _event: redraw_chart())
+        video_tree.bind("<<TreeviewSelect>>", update_thumb_label)
+        video_button.configure(command=open_video)
+        thumb_button.configure(command=open_thumb)
+        thumb_label.bind("<Button-1>", lambda _event: open_thumb())
         refresh_button.configure(command=lambda: start_refresh(True))
         start_refresh(False)
 
