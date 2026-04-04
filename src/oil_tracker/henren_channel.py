@@ -189,6 +189,8 @@ def parse_henren_feed(xml_text: str, limit: int = 12) -> HenrenSnapshot:
         if not (title_node is not None and link_node is not None and published_node is not None):
             continue
         title = title_node.text.strip() if title_node.text else "Untitled"
+        if "倒台" not in title:
+            continue
         link = link_node.attrib.get("href", "")
         published = _parse_iso_datetime(published_node.text or "")
         thumbnail = thumb_node.attrib.get("url", "") if thumb_node is not None else ""
