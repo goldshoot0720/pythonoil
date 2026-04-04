@@ -29,8 +29,13 @@ HENREN_USER_FEED_URL = "https://www.youtube.com/feeds/videos.xml?user=henren778"
 HENREN_FEED_URLS = (
     "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
     "https://www.youtube-nocookie.com/feeds/videos.xml?channel_id={channel_id}",
+    "https://r.jina.ai/http://www.youtube.com/feeds/videos.xml?channel_id={channel_id}",
+    "https://r.jina.ai/http://www.youtube-nocookie.com/feeds/videos.xml?channel_id={channel_id}",
     "https://yewtu.be/feed/channel/{channel_id}",
     "https://vid.puffyan.us/feed/channel/{channel_id}",
+    "https://invidious.tiekoetter.com/feed/channel/{channel_id}",
+    "https://invidious.nerdvpn.de/feed/channel/{channel_id}",
+    "https://invidious.fdn.fr/feed/channel/{channel_id}",
 )
 HENREN_CHANNEL_ID = "UCJAPsTtcJJWGk8e-_CJL8TQ"
 
@@ -103,8 +108,10 @@ def fetch_henren_snapshot(limit: int = 12, timeout: int = 20) -> HenrenSnapshot:
 
 def _fetch_from_channel_id(channel_id: str, timeout: int, limit: int) -> HenrenSnapshot:
     last_error: Exception | None = None
+    last_url: str | None = None
     for template in HENREN_FEED_URLS:
         feed_url = template.format(channel_id=channel_id)
+        last_url = feed_url
         try:
             xml_text = _fetch_text(feed_url, timeout=timeout)
             return parse_henren_feed(xml_text, limit=limit)
@@ -112,7 +119,8 @@ def _fetch_from_channel_id(channel_id: str, timeout: int, limit: int) -> HenrenS
             last_error = exc
             continue
     if last_error:
-        raise last_error
+        message = f"{last_error} (last url: {last_url})"
+        raise ValueError(message) from last_error
     raise ValueError("無法取得頻道 RSS")
 
 
