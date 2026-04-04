@@ -1550,7 +1550,7 @@ class OilTrackerApp:
         side_panel = ttk.Frame(container, style="Root.TFrame")
         side_panel.grid(row=3, column=1, sticky="nsew", pady=(16, 0))
         side_panel.columnconfigure(0, weight=1)
-        side_panel.rowconfigure(1, weight=1)
+        side_panel.rowconfigure(2, weight=1)
 
         summary_panel = ttk.Frame(side_panel, style="StatsPanel.TFrame", padding=16)
         summary_panel.grid(row=0, column=0, sticky="ew")
@@ -2642,8 +2642,22 @@ class OilTrackerApp:
             ttk.Label(block, text=label, style="StatsLabel.TLabel").grid(row=0, column=0, sticky="w")
             ttk.Label(block, textvariable=variable, style="StatsValue.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
 
+        april_panel = ttk.Frame(side_panel, style="StatsPanel.TFrame", padding=16)
+        april_panel.grid(row=1, column=0, sticky="ew", pady=(14, 0))
+        april_panel.columnconfigure(0, weight=1)
+        april_panel.columnconfigure(1, weight=1)
+        ttk.Label(april_panel, text="April 30 Probability", style="StatsLabel.TLabel").grid(row=0, column=0, sticky="w")
+        april_prob_var = tk.StringVar(value="-")
+        ttk.Label(april_panel, textvariable=april_prob_var, style="StatsValue.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        april_price_var = tk.StringVar(value="-")
+        ttk.Label(april_panel, textvariable=april_price_var, style="StatsLabel.TLabel").grid(
+            row=0, column=1, rowspan=2, sticky="e"
+        )
+        april_canvas = tk.Canvas(april_panel, bg="#0c1a2d", highlightthickness=0, height=48)
+        april_canvas.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+
         table_panel = ttk.Frame(side_panel, style="Panel.TFrame", padding=16)
-        table_panel.grid(row=1, column=0, sticky="nsew", pady=(14, 0))
+        table_panel.grid(row=2, column=0, sticky="nsew", pady=(14, 0))
         table_panel.columnconfigure(0, weight=1)
         table_panel.rowconfigure(1, weight=1)
         ttk.Label(table_panel, text="Outcomes", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
@@ -2671,6 +2685,7 @@ class OilTrackerApp:
         outcome_tree.configure(yscrollcommand=scrollbar.set)
 
         event_cache: dict[str, PolymarketEvent | None] = {"value": None}
+        april_outcome_cache: dict[str, PolymarketOutcome | None] = {"value": None}
 
         def redraw_chart() -> None:
             event = event_cache["value"]
@@ -2740,6 +2755,53 @@ class OilTrackerApp:
                 anchor="w",
             )
 
+        def redraw_april_bar() -> None:
+            april_canvas.delete("all")
+            width = max(april_canvas.winfo_width(), 240)
+            height = max(april_canvas.winfo_height(), 40)
+            april_canvas.create_rectangle(0, 0, width, height, fill="#0c1a2d", outline="")
+
+            outcome = april_outcome_cache["value"]
+            if outcome is None:
+                april_canvas.create_text(
+                    width / 2,
+                    height / 2,
+                    text="No April 30 data",
+                    fill="#5f7892",
+                    font=("Segoe UI", 9),
+                )
+                return
+
+            bar_padding = 10
+            bar_height = 16
+            bar_width = max(width - bar_padding * 2, 60)
+            filled_width = bar_width * (outcome.probability / 100.0)
+            y0 = (height - bar_height) / 2
+            april_canvas.create_rectangle(
+                bar_padding,
+                y0,
+                bar_padding + bar_width,
+                y0 + bar_height,
+                fill="#0a1626",
+                outline="#1a2a3f",
+            )
+            april_canvas.create_rectangle(
+                bar_padding,
+                y0,
+                bar_padding + filled_width,
+                y0 + bar_height,
+                fill="#7fd4ff",
+                outline="",
+            )
+            april_canvas.create_text(
+                bar_padding + bar_width,
+                y0 - 6,
+                text=f"{outcome.probability:.1f}%",
+                fill="#dbe9f6",
+                font=("Segoe UI", 8),
+                anchor="se",
+            )
+
         def apply_event(event: PolymarketEvent) -> None:
             event_cache["value"] = event
             for item in outcome_tree.get_children():
@@ -2760,8 +2822,17 @@ class OilTrackerApp:
             title_var.set(event.title)
             volume_var.set(event.volume)
             chart_hint_var.set(f"{len(event.outcomes)} outcomes")
+            april_outcome = next((item for item in event.outcomes if "4月30日" in item.label), None)
+            april_outcome_cache["value"] = april_outcome
+            if april_outcome is None:
+                april_prob_var.set("-")
+                april_price_var.set("-")
+            else:
+                april_prob_var.set(f"{april_outcome.probability:.1f}%")
+                april_price_var.set(f"Yes {april_outcome.yes_price:.1f}¢ / No {april_outcome.no_price:.1f}¢")
             status_var.set("Polymarket 事件資料已更新。")
             redraw_chart()
+            redraw_april_bar()
             refresh_button.state(["!disabled"])
 
         def show_error(message: str) -> None:
@@ -2783,6 +2854,7 @@ class OilTrackerApp:
             threading.Thread(target=lambda: worker(force_refresh), daemon=True).start()
 
         chart_canvas.bind("<Configure>", lambda _event: redraw_chart())
+        april_canvas.bind("<Configure>", lambda _event: redraw_april_bar())
         refresh_button.configure(command=lambda: start_refresh(True))
         start_refresh(False)
 
