@@ -10,13 +10,17 @@ import urllib.request
 import xml.etree.ElementTree as ET
 
 
-HENREN_HANDLE_URL = "https://www.youtube.com/@henren778"
+HENREN_HANDLE_URL = "https://www.youtube.com/channel/UCJAPsTtcJJWGk8e-_CJL8TQ"
 HENREN_HANDLE_URLS = (
+    "https://www.youtube.com/channel/UCJAPsTtcJJWGk8e-_CJL8TQ",
+    "https://www.youtube.com/channel/UCJAPsTtcJJWGk8e-_CJL8TQ/videos",
     "https://www.youtube.com/@henren778",
     "https://www.youtube.com/@henren778/featured",
     "https://www.youtube.com/@henren778/videos",
 )
 HENREN_JINA_URLS = (
+    "https://r.jina.ai/http://www.youtube.com/channel/UCJAPsTtcJJWGk8e-_CJL8TQ",
+    "https://r.jina.ai/http://www.youtube.com/channel/UCJAPsTtcJJWGk8e-_CJL8TQ/videos",
     "https://r.jina.ai/http://www.youtube.com/@henren778",
     "https://r.jina.ai/http://www.youtube.com/@henren778/videos",
 )
