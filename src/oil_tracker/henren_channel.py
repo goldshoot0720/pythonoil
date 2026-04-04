@@ -18,6 +18,7 @@ class HenrenVideo:
     link: str
     published: datetime
     thumbnail_url: str
+    index_value: float | None = None
 
 
 @dataclass(frozen=True)
@@ -95,13 +96,25 @@ def parse_henren_feed(xml_text: str, limit: int = 12) -> HenrenSnapshot:
         link = link_node.attrib.get("href", "")
         published = _parse_iso_datetime(published_node.text or "")
         thumbnail = thumb_node.attrib.get("url", "") if thumb_node is not None else ""
+        index_value = _extract_index_value(title)
         videos.append(
             HenrenVideo(
                 title=title,
                 link=link,
                 published=published,
                 thumbnail_url=thumbnail,
+                index_value=index_value,
             )
         )
 
     return HenrenSnapshot(channel_title=channel_title, updated=updated, videos=videos)
+
+
+def _extract_index_value(title: str) -> float | None:
+    match = re.search(r"(?:倒台指數|倒台指数)[^\d]*?(\d+(?:\.\d+)?)", title)
+    if match:
+        return float(match.group(1))
+    match = re.search(r"\b(\d+(?:\.\d+)?)\b", title)
+    if match:
+        return float(match.group(1))
+    return None

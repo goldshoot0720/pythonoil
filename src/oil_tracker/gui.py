@@ -2897,7 +2897,7 @@ class OilTrackerApp:
         chart_panel.grid(row=3, column=0, sticky="nsew", padx=(0, 14), pady=(16, 0))
         chart_panel.columnconfigure(0, weight=1)
         chart_panel.rowconfigure(1, weight=1)
-        ttk.Label(chart_panel, text="倒台指數（距離上片天數）", style="ChartTitle.TLabel").grid(
+        ttk.Label(chart_panel, text="倒台指數（標題數值優先）", style="ChartTitle.TLabel").grid(
             row=0, column=0, sticky="w"
         )
 
@@ -2995,7 +2995,12 @@ class OilTrackerApp:
                 return
 
             now = datetime.now(snapshot.videos[0].published.tzinfo)
-            indices = [max((now - video.published).days, 0) for video in snapshot.videos[:8]]
+            indices = []
+            for video in snapshot.videos[:8]:
+                if video.index_value is not None:
+                    indices.append(video.index_value)
+                else:
+                    indices.append(float(max((now - video.published).days, 0)))
             max_index = max(indices) if indices else 1
 
             padding_left = 54
@@ -3027,7 +3032,7 @@ class OilTrackerApp:
                 chart_canvas.create_text(
                     (x0 + x1) / 2,
                     y0 - 12,
-                    text=f"{value}d",
+                    text=f"{value:.2f}" if video.index_value is not None else f"{int(value)}d",
                     fill="#dbe9f6",
                     font=("Segoe UI", 9),
                 )
@@ -3042,7 +3047,7 @@ class OilTrackerApp:
             chart_canvas.create_text(
                 padding_left,
                 padding_top - 8,
-                text="Days since publish",
+                text="Index from title, fallback to days",
                 fill="#7fd4ff",
                 font=("Segoe UI Semibold", 10),
                 anchor="w",
@@ -3058,19 +3063,24 @@ class OilTrackerApp:
             indices = []
             for index, video in enumerate(snapshot.videos):
                 days = max((now - video.published).days, 0)
-                indices.append(days)
+                value = video.index_value if video.index_value is not None else float(days)
+                indices.append(value)
                 tag = "even" if index % 2 == 0 else "odd"
                 item_id = video_tree.insert(
                     "",
                     "end",
-                    values=(video.published.strftime("%Y-%m-%d"), f"{days}d", video.title[:40]),
+                    values=(
+                        video.published.strftime("%Y-%m-%d"),
+                        f"{value:.2f}" if video.index_value is not None else f"{int(value)}d",
+                        video.title[:40],
+                    ),
                     tags=(tag,),
                 )
                 video_link_map[item_id] = (video.link, video.thumbnail_url)
 
             channel_var.set(snapshot.channel_title)
             updated_var.set(snapshot.updated.strftime("%Y-%m-%d %H:%M") if snapshot.updated else "-")
-            avg_index_var.set(f"{sum(indices) / len(indices):.1f}d" if indices else "-")
+            avg_index_var.set(f"{sum(indices) / len(indices):.2f}" if indices else "-")
             chart_hint_var.set(f"{len(snapshot.videos)} videos")
             status_var.set("影片資料已更新。")
             redraw_chart()
