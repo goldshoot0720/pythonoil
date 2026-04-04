@@ -27,6 +27,11 @@ try:
         load_cached_github_commit_stats,
         save_cached_github_commit_stats,
     )
+    from .brent_spot import (
+        BRENT_SPOT_SOURCE_URL,
+        BrentSpotPoint,
+        fetch_brent_spot_series,
+    )
     from .pizza_watch import (
         PizzaWatchHistoryEntry,
         PizzaWatchSnapshot,
@@ -47,6 +52,11 @@ except ImportError:
         fetch_github_commit_stats,
         load_cached_github_commit_stats,
         save_cached_github_commit_stats,
+    )
+    from brent_spot import (
+        BRENT_SPOT_SOURCE_URL,
+        BrentSpotPoint,
+        fetch_brent_spot_series,
     )
     from pizza_watch import (
         PizzaWatchHistoryEntry,
@@ -583,6 +593,7 @@ class OilTrackerApp:
         menu_bar.add_cascade(label="設定", menu=settings_menu)
         menu_bar.add_command(label="最瞎結婚理由", command=self.open_lottery_window)
         menu_bar.add_command(label="披薩監控", command=self.open_pizza_watch_window)
+        menu_bar.add_command(label="Dated Brent 現貨", command=self.open_brent_spot_window)
         self.root.configure(menu=menu_bar)
 
     def open_creative_studio(self) -> None:
@@ -1870,6 +1881,227 @@ class OilTrackerApp:
             status_var.set("載入官方台灣彩券年度資料中，這會花一點時間...")
             threading.Thread(target=lambda: worker(force_refresh), daemon=True).start()
 
+        refresh_button.configure(command=lambda: start_refresh(True))
+        start_refresh(False)
+
+    def open_brent_spot_window(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("Dated Brent 現貨")
+        window.geometry("1080x720")
+        window.minsize(920, 580)
+        window.configure(bg="#07111f")
+
+        container = ttk.Frame(window, style="Root.TFrame", padding=20)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=3)
+        container.columnconfigure(1, weight=2)
+        container.rowconfigure(3, weight=1)
+
+        ttk.Label(container, text="Dated Brent 現貨原油", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        source_link = ttk.Label(container, text=BRENT_SPOT_SOURCE_URL, style="Link.TLabel", cursor="hand2")
+        source_link.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        source_link.bind("<Button-1>", lambda _event: webbrowser.open_new_tab(BRENT_SPOT_SOURCE_URL))
+
+        header_actions = ttk.Frame(container, style="Root.TFrame")
+        header_actions.grid(row=0, column=1, sticky="e")
+        refresh_button = ttk.Button(header_actions, text="Refresh")
+        refresh_button.pack(anchor="e")
+
+        status_var = tk.StringVar(value="準備載入 Brent 現貨資料...")
+        ttk.Label(container, textvariable=status_var, style="Status.TLabel", wraplength=1020, justify="left").grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(12, 0),
+        )
+
+        chart_panel = ttk.Frame(container, style="ChartPanel.TFrame", padding=18)
+        chart_panel.grid(row=3, column=0, sticky="nsew", padx=(0, 14), pady=(16, 0))
+        chart_panel.columnconfigure(0, weight=1)
+        chart_panel.rowconfigure(1, weight=1)
+        ttk.Label(chart_panel, text="Dated Brent Spot Price (USD/bbl)", style="ChartTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+
+        chart_hint_var = tk.StringVar(value="等待資料")
+        ttk.Label(chart_panel, textvariable=chart_hint_var, style="ChartHint.TLabel").grid(row=0, column=1, sticky="e")
+
+        chart_canvas = tk.Canvas(chart_panel, bg="#0a1626", highlightthickness=0)
+        chart_canvas.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(14, 0))
+
+        side_panel = ttk.Frame(container, style="Root.TFrame")
+        side_panel.grid(row=3, column=1, sticky="nsew", pady=(16, 0))
+        side_panel.columnconfigure(0, weight=1)
+        side_panel.rowconfigure(1, weight=1)
+
+        summary_panel = ttk.Frame(side_panel, style="StatsPanel.TFrame", padding=16)
+        summary_panel.grid(row=0, column=0, sticky="ew")
+        for index in range(3):
+            summary_panel.columnconfigure(index, weight=1)
+
+        latest_price_var = tk.StringVar(value="-")
+        latest_date_var = tk.StringVar(value="-")
+        change_var = tk.StringVar(value="-")
+        for column, (label, variable) in enumerate(
+            (
+                ("Latest", latest_price_var),
+                ("Date", latest_date_var),
+                ("Change", change_var),
+            )
+        ):
+            block = ttk.Frame(summary_panel, style="StatsPanel.TFrame")
+            block.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 10, 0))
+            block.columnconfigure(0, weight=1)
+            ttk.Label(block, text=label, style="StatsLabel.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(block, textvariable=variable, style="StatsValue.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+        table_panel = ttk.Frame(side_panel, style="Panel.TFrame", padding=16)
+        table_panel.grid(row=1, column=0, sticky="nsew", pady=(14, 0))
+        table_panel.columnconfigure(0, weight=1)
+        table_panel.rowconfigure(1, weight=1)
+        ttk.Label(table_panel, text="Recent Brent Spot", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+
+        price_tree = ttk.Treeview(table_panel, columns=("date", "price"), show="headings", height=14)
+        price_tree.heading("date", text="Date")
+        price_tree.heading("price", text="USD/bbl")
+        price_tree.column("date", width=120, anchor="center")
+        price_tree.column("price", width=120, anchor="e")
+        price_tree.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        price_tree.tag_configure("even", background="#0d1b2d")
+        price_tree.tag_configure("odd", background="#102238")
+
+        scrollbar = ttk.Scrollbar(table_panel, orient="vertical", command=price_tree.yview, style="Vertical.TScrollbar")
+        scrollbar.grid(row=1, column=1, sticky="ns", pady=(12, 0))
+        price_tree.configure(yscrollcommand=scrollbar.set)
+
+        series_cache: dict[str, list[BrentSpotPoint]] = {"value": []}
+
+        def redraw_chart() -> None:
+            points = series_cache["value"]
+            chart_canvas.delete("all")
+
+            width = max(chart_canvas.winfo_width(), 420)
+            height = max(chart_canvas.winfo_height(), 280)
+            chart_canvas.create_rectangle(0, 0, width, height, fill="#0a1626", outline="")
+
+            if not points:
+                chart_canvas.create_text(
+                    width / 2,
+                    height / 2,
+                    text="No Brent spot data yet",
+                    fill="#5f7892",
+                    font=("Segoe UI Semibold", 14),
+                )
+                return
+
+            padding_left = 54
+            padding_right = 24
+            padding_top = 34
+            padding_bottom = 54
+            plot_width = width - padding_left - padding_right
+            plot_height = height - padding_top - padding_bottom
+
+            prices = [point.price for point in points]
+            min_price = min(prices)
+            max_price = max(prices)
+            span = max(max_price - min_price, 1.0)
+            lower = min_price - span * 0.1
+            upper = max_price + span * 0.1
+            display_span = upper - lower
+
+            def x_for(index: int) -> float:
+                return padding_left + plot_width * index / max(len(points) - 1, 1)
+
+            def y_for(price: float) -> float:
+                return padding_top + plot_height - ((price - lower) / display_span) * plot_height
+
+            chart_canvas.create_line(
+                padding_left,
+                height - padding_bottom,
+                width - padding_right,
+                height - padding_bottom,
+                fill="#284767",
+                width=1,
+            )
+            chart_canvas.create_line(
+                padding_left,
+                padding_top,
+                padding_left,
+                height - padding_bottom,
+                fill="#284767",
+                width=1,
+            )
+
+            points_line: list[float] = []
+            for index, point in enumerate(points):
+                points_line.extend((x_for(index), y_for(point.price)))
+
+            if len(points_line) >= 4:
+                chart_canvas.create_line(*points_line, fill="#7fd4ff", width=3, smooth=True)
+
+            for index, point in enumerate(points):
+                x = x_for(index)
+                y = y_for(point.price)
+                chart_canvas.create_oval(x - 3, y - 3, x + 3, y + 3, fill="#7fd4ff", outline="#0a1626", width=2)
+
+            label_indexes = sorted({0, len(points) // 2, len(points) - 1})
+            for index in label_indexes:
+                x = x_for(index)
+                chart_canvas.create_text(
+                    x,
+                    height - padding_bottom + 18,
+                    text=points[index].price_date.strftime("%m-%d"),
+                    fill="#7c95af",
+                    font=("Segoe UI", 8),
+                )
+
+            chart_canvas.create_text(
+                padding_left,
+                padding_top - 8,
+                text="Spot price trend",
+                fill="#7fd4ff",
+                font=("Segoe UI Semibold", 10),
+                anchor="w",
+            )
+
+        def apply_series(points: list[BrentSpotPoint]) -> None:
+            series_cache["value"] = points
+            for item in price_tree.get_children():
+                price_tree.delete(item)
+            for index, point in enumerate(reversed(points[-30:])):
+                tag = "even" if index % 2 == 0 else "odd"
+                price_tree.insert("", "end", values=(point.price_date.isoformat(), f"{point.price:.2f}"), tags=(tag,))
+
+            latest = points[-1]
+            previous = points[-2] if len(points) > 1 else None
+            latest_price_var.set(f"{latest.price:.2f}")
+            latest_date_var.set(latest.price_date.isoformat())
+            change_var.set("N/A" if previous is None else f"{latest.price - previous.price:+.2f}")
+            chart_hint_var.set(f"{len(points)} data points")
+            status_var.set("Brent 現貨圖表已更新。資料來源為 EIA spot price 資料集。")
+            redraw_chart()
+            refresh_button.state(["!disabled"])
+
+        def show_error(message: str) -> None:
+            refresh_button.state(["!disabled"])
+            status_var.set(f"Brent 現貨資料載入失敗: {message}")
+
+        def worker(force_refresh: bool) -> None:
+            try:
+                points = series_cache["value"]
+                if force_refresh or not points:
+                    points = fetch_brent_spot_series()
+                self.root.after(0, lambda: apply_series(points))
+            except Exception as exc:
+                self.root.after(0, lambda message=str(exc): show_error(message))
+
+        def start_refresh(force_refresh: bool) -> None:
+            refresh_button.state(["disabled"])
+            status_var.set("載入 Brent 現貨資料中...")
+            threading.Thread(target=lambda: worker(force_refresh), daemon=True).start()
+
+        chart_canvas.bind("<Configure>", lambda _event: redraw_chart())
         refresh_button.configure(command=lambda: start_refresh(True))
         start_refresh(False)
 
