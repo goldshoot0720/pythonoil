@@ -32,6 +32,7 @@ try:
         BrentSpotPoint,
         fetch_brent_spot_series,
     )
+    from .dram_spot import DRAM_SPOT_URL, DramSpotSnapshot, fetch_dram_spot_snapshot
     from .fragile_states_index import FSIChinaPoint, fetch_fsi_china_series
     from .pizza_watch import (
         PizzaWatchHistoryEntry,
@@ -59,6 +60,7 @@ except ImportError:
         BrentSpotPoint,
         fetch_brent_spot_series,
     )
+    from dram_spot import DRAM_SPOT_URL, DramSpotSnapshot, fetch_dram_spot_snapshot
     from fragile_states_index import FSIChinaPoint, fetch_fsi_china_series
     from pizza_watch import (
         PizzaWatchHistoryEntry,
@@ -601,6 +603,7 @@ class OilTrackerApp:
         menu_bar.add_command(label="披薩監控", command=self.open_pizza_watch_window)
         menu_bar.add_command(label="Dated Brent 現貨", command=self.open_brent_spot_window)
         menu_bar.add_command(label="Fragile States China", command=self.open_fsi_china_window)
+        menu_bar.add_command(label="DRAM 現貨價格", command=self.open_dram_spot_window)
         self.root.configure(menu=menu_bar)
 
     def open_creative_studio(self) -> None:
@@ -2356,6 +2359,217 @@ class OilTrackerApp:
         def start_refresh(force_refresh: bool) -> None:
             refresh_button.state(["disabled"])
             status_var.set("載入 FSI China 資料中...")
+            threading.Thread(target=lambda: worker(force_refresh), daemon=True).start()
+
+        chart_canvas.bind("<Configure>", lambda _event: redraw_chart())
+        refresh_button.configure(command=lambda: start_refresh(True))
+        start_refresh(False)
+
+    def open_dram_spot_window(self) -> None:
+        window = tk.Toplevel(self.root)
+        window.title("DRAM 現貨價格")
+        window.geometry("1080x720")
+        window.minsize(920, 580)
+        window.configure(bg="#07111f")
+
+        container = ttk.Frame(window, style="Root.TFrame", padding=20)
+        container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=3)
+        container.columnconfigure(1, weight=2)
+        container.rowconfigure(3, weight=1)
+
+        ttk.Label(container, text="DRAM 現貨價格", style="Title.TLabel").grid(row=0, column=0, sticky="w")
+        source_link = ttk.Label(container, text=DRAM_SPOT_URL, style="Link.TLabel", cursor="hand2")
+        source_link.grid(row=1, column=0, sticky="w", pady=(6, 0))
+        source_link.bind("<Button-1>", lambda _event: webbrowser.open_new_tab(DRAM_SPOT_URL))
+
+        header_actions = ttk.Frame(container, style="Root.TFrame")
+        header_actions.grid(row=0, column=1, sticky="e")
+        refresh_button = ttk.Button(header_actions, text="Refresh")
+        refresh_button.pack(anchor="e")
+
+        status_var = tk.StringVar(value="準備載入 DRAM 現貨資料...")
+        ttk.Label(container, textvariable=status_var, style="Status.TLabel", wraplength=1020, justify="left").grid(
+            row=2,
+            column=0,
+            columnspan=2,
+            sticky="w",
+            pady=(12, 0),
+        )
+
+        chart_panel = ttk.Frame(container, style="ChartPanel.TFrame", padding=18)
+        chart_panel.grid(row=3, column=0, sticky="nsew", padx=(0, 14), pady=(16, 0))
+        chart_panel.columnconfigure(0, weight=1)
+        chart_panel.rowconfigure(1, weight=1)
+        ttk.Label(chart_panel, text="DRAM Spot Session Average", style="ChartTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+
+        chart_hint_var = tk.StringVar(value="等待資料")
+        ttk.Label(chart_panel, textvariable=chart_hint_var, style="ChartHint.TLabel").grid(row=0, column=1, sticky="e")
+
+        chart_canvas = tk.Canvas(chart_panel, bg="#0a1626", highlightthickness=0)
+        chart_canvas.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(14, 0))
+
+        side_panel = ttk.Frame(container, style="Root.TFrame")
+        side_panel.grid(row=3, column=1, sticky="nsew", pady=(16, 0))
+        side_panel.columnconfigure(0, weight=1)
+        side_panel.rowconfigure(1, weight=1)
+
+        summary_panel = ttk.Frame(side_panel, style="StatsPanel.TFrame", padding=16)
+        summary_panel.grid(row=0, column=0, sticky="ew")
+        for index in range(2):
+            summary_panel.columnconfigure(index, weight=1)
+
+        last_update_var = tk.StringVar(value="-")
+        item_count_var = tk.StringVar(value="-")
+        for column, (label, variable) in enumerate((("Last Update", last_update_var), ("Items", item_count_var))):
+            block = ttk.Frame(summary_panel, style="StatsPanel.TFrame")
+            block.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 10, 0))
+            block.columnconfigure(0, weight=1)
+            ttk.Label(block, text=label, style="StatsLabel.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(block, textvariable=variable, style="StatsValue.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+
+        table_panel = ttk.Frame(side_panel, style="Panel.TFrame", padding=16)
+        table_panel.grid(row=1, column=0, sticky="nsew", pady=(14, 0))
+        table_panel.columnconfigure(0, weight=1)
+        table_panel.rowconfigure(1, weight=1)
+        ttk.Label(table_panel, text="DRAM Spot Table", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
+
+        dram_tree = ttk.Treeview(
+            table_panel,
+            columns=("item", "avg", "change"),
+            show="headings",
+            height=14,
+        )
+        dram_tree.heading("item", text="Item")
+        dram_tree.heading("avg", text="Session Avg")
+        dram_tree.heading("change", text="Change")
+        dram_tree.column("item", width=260, anchor="w")
+        dram_tree.column("avg", width=110, anchor="e")
+        dram_tree.column("change", width=100, anchor="center")
+        dram_tree.grid(row=1, column=0, sticky="nsew", pady=(12, 0))
+        dram_tree.tag_configure("even", background="#0d1b2d")
+        dram_tree.tag_configure("odd", background="#102238")
+
+        scrollbar = ttk.Scrollbar(table_panel, orient="vertical", command=dram_tree.yview, style="Vertical.TScrollbar")
+        scrollbar.grid(row=1, column=1, sticky="ns", pady=(12, 0))
+        dram_tree.configure(yscrollcommand=scrollbar.set)
+
+        snapshot_cache: dict[str, DramSpotSnapshot | None] = {"value": None}
+
+        def redraw_chart() -> None:
+            snapshot = snapshot_cache["value"]
+            chart_canvas.delete("all")
+
+            width = max(chart_canvas.winfo_width(), 420)
+            height = max(chart_canvas.winfo_height(), 280)
+            chart_canvas.create_rectangle(0, 0, width, height, fill="#0a1626", outline="")
+
+            if snapshot is None or not snapshot.rows:
+                chart_canvas.create_text(
+                    width / 2,
+                    height / 2,
+                    text="No DRAM spot data yet",
+                    fill="#5f7892",
+                    font=("Segoe UI Semibold", 14),
+                )
+                return
+
+            rows = [row for row in snapshot.rows if row.session_average is not None]
+            if not rows:
+                chart_canvas.create_text(
+                    width / 2,
+                    height / 2,
+                    text="No session average data",
+                    fill="#5f7892",
+                    font=("Segoe UI Semibold", 14),
+                )
+                return
+
+            padding_left = 54
+            padding_right = 24
+            padding_top = 34
+            padding_bottom = 54
+            plot_width = width - padding_left - padding_right
+            plot_height = height - padding_top - padding_bottom
+
+            max_avg = max(row.session_average for row in rows if row.session_average is not None)
+            bar_gap = 10
+            bar_width = max((plot_width - bar_gap * (len(rows) - 1)) / max(len(rows), 1), 22)
+
+            chart_canvas.create_line(
+                padding_left,
+                height - padding_bottom,
+                width - padding_right,
+                height - padding_bottom,
+                fill="#284767",
+                width=1,
+            )
+
+            for index, row in enumerate(rows):
+                x0 = padding_left + index * (bar_width + bar_gap)
+                x1 = x0 + bar_width
+                avg = row.session_average or 0.0
+                bar_height = plot_height * (avg / max(max_avg, 0.1))
+                y0 = height - padding_bottom - bar_height
+                chart_canvas.create_rectangle(x0, y0, x1, height - padding_bottom, fill="#7fd4ff", outline="")
+                chart_canvas.create_text(
+                    (x0 + x1) / 2,
+                    y0 - 12,
+                    text=f"{avg:.2f}",
+                    fill="#dbe9f6",
+                    font=("Segoe UI", 9),
+                )
+                chart_canvas.create_text(
+                    (x0 + x1) / 2,
+                    height - padding_bottom + 18,
+                    text=row.item[:10],
+                    fill="#7c95af",
+                    font=("Segoe UI", 8),
+                    angle=18,
+                )
+
+            chart_canvas.create_text(
+                padding_left,
+                padding_top - 8,
+                text="Session average per item",
+                fill="#7fd4ff",
+                font=("Segoe UI Semibold", 10),
+                anchor="w",
+            )
+
+        def apply_snapshot(snapshot: DramSpotSnapshot) -> None:
+            snapshot_cache["value"] = snapshot
+            for item in dram_tree.get_children():
+                dram_tree.delete(item)
+            for index, row in enumerate(snapshot.rows):
+                tag = "even" if index % 2 == 0 else "odd"
+                avg_text = "-" if row.session_average is None else f"{row.session_average:.2f}"
+                dram_tree.insert("", "end", values=(row.item, avg_text, row.session_change), tags=(tag,))
+            last_update_var.set(snapshot.last_update)
+            item_count_var.set(str(len(snapshot.rows)))
+            chart_hint_var.set("Session average by item")
+            status_var.set("DRAM 現貨資料已更新。來源為 TrendForce DRAM Spot Price。")
+            redraw_chart()
+            refresh_button.state(["!disabled"])
+
+        def show_error(message: str) -> None:
+            refresh_button.state(["!disabled"])
+            status_var.set(f"DRAM 現貨資料載入失敗: {message}")
+
+        def worker(force_refresh: bool) -> None:
+            try:
+                snapshot = snapshot_cache["value"]
+                if force_refresh or snapshot is None:
+                    snapshot = fetch_dram_spot_snapshot()
+                self.root.after(0, lambda: apply_snapshot(snapshot))
+            except Exception as exc:
+                self.root.after(0, lambda message=str(exc): show_error(message))
+
+        def start_refresh(force_refresh: bool) -> None:
+            refresh_button.state(["disabled"])
+            status_var.set("載入 DRAM 現貨資料中...")
             threading.Thread(target=lambda: worker(force_refresh), daemon=True).start()
 
         chart_canvas.bind("<Configure>", lambda _event: redraw_chart())
