@@ -14,6 +14,10 @@ HENREN_HANDLE_URLS = (
     "https://www.youtube.com/@henren778/featured",
     "https://www.youtube.com/@henren778/videos",
 )
+HENREN_JINA_URLS = (
+    "https://r.jina.ai/http://www.youtube.com/@henren778",
+    "https://r.jina.ai/http://www.youtube.com/@henren778/videos",
+)
 HENREN_USER_FEED_URL = "https://www.youtube.com/feeds/videos.xml?user=henren778"
 HENREN_FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
@@ -95,7 +99,7 @@ def fetch_channel_id_from_handle(timeout: int = 20) -> str:
 
 def _fetch_handle_html(timeout: int = 20) -> str:
     last_error: Exception | None = None
-    for url in HENREN_HANDLE_URLS:
+    for url in HENREN_HANDLE_URLS + HENREN_JINA_URLS:
         try:
             return _fetch_text(url, timeout=timeout)
         except Exception as exc:
