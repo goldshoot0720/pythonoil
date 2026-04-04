@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import json
 import re
 import ssl
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -18,6 +20,7 @@ HENREN_JINA_URLS = (
     "https://r.jina.ai/http://www.youtube.com/@henren778",
     "https://r.jina.ai/http://www.youtube.com/@henren778/videos",
 )
+HENREN_OEMBED_URL = "https://www.youtube.com/oembed?url={target}&format=json"
 HENREN_USER_FEED_URL = "https://www.youtube.com/feeds/videos.xml?user=henren778"
 HENREN_FEED_URL = "https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
 
@@ -86,6 +89,10 @@ def fetch_henren_snapshot(limit: int = 12, timeout: int = 20) -> HenrenSnapshot:
 
 
 def fetch_channel_id_from_handle(timeout: int = 20) -> str:
+    oembed_id = _fetch_channel_id_from_oembed(timeout=timeout)
+    if oembed_id:
+        return oembed_id
+
     html_text = _fetch_handle_html(timeout=timeout)
     match = re.search(r"channelId\":\"(UC[^\"]+)\"", html_text)
     if not match:
@@ -95,6 +102,22 @@ def fetch_channel_id_from_handle(timeout: int = 20) -> str:
     if not match:
         raise ValueError("無法解析 YouTube channel ID")
     return match.group(1)
+
+
+def _fetch_channel_id_from_oembed(timeout: int = 20) -> str | None:
+    for target in HENREN_HANDLE_URLS:
+        try:
+            encoded = urllib.parse.quote(target, safe="")
+            url = HENREN_OEMBED_URL.format(target=encoded)
+            payload = _fetch_text(url, timeout=timeout)
+            data = json.loads(payload)
+            author_url = str(data.get("author_url", ""))
+            match = re.search(r"/channel/(UC[\w-]+)", author_url)
+            if match:
+                return match.group(1)
+        except Exception:
+            continue
+    return None
 
 
 def _fetch_handle_html(timeout: int = 20) -> str:
