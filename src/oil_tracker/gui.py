@@ -133,6 +133,9 @@ class OilTrackerApp:
         self._birthday_mode = self._birthday_easter_egg is not None
         self._birthday_sparkles: list[dict[str, float | str]] = []
         self._birthday_animation_tick = 0
+        self._sleep_prompt_date: str | None = None
+        self._sleep_prompt_last_key: str | None = None
+        self._sleep_prompt_count: int = 0
 
         self.root.title("OQD Market Terminal")
         self.root.geometry("1320x860")
@@ -144,6 +147,7 @@ class OilTrackerApp:
         self._configure_styles()
 
         self.status_var = tk.StringVar(value="System ready")
+        self.sleep_hint_var = tk.StringVar(value="睡眠提示：尚未開始")
         self.date_var = tk.StringVar(value="-")
         self.price_var = tk.StringVar(value="-")
         self.change_var = tk.StringVar(value="-")
@@ -156,6 +160,7 @@ class OilTrackerApp:
 
         self._build_layout()
         self.refresh_history()
+        self._update_sleep_prompt()
 
     def _configure_styles(self) -> None:
         self.style.configure("Root.TFrame", background="#07111f")
@@ -196,6 +201,12 @@ class OilTrackerApp:
             background="#0b1628",
             foreground="#8ea4bd",
             font=("Segoe UI", 11),
+        )
+        self.style.configure(
+            "SleepHint.TLabel",
+            background="#0b1628",
+            foreground="#ffd48a",
+            font=("Segoe UI Semibold", 10),
         )
         self.style.configure(
             "HeroMetricLabel.TLabel",
@@ -361,6 +372,13 @@ class OilTrackerApp:
             wraplength=660,
             justify="left",
         ).grid(row=2, column=0, sticky="w", pady=(10, 0))
+        ttk.Label(
+            header,
+            textvariable=self.sleep_hint_var,
+            style="SleepHint.TLabel",
+            wraplength=660,
+            justify="left",
+        ).grid(row=3, column=0, sticky="w", pady=(8, 0))
 
         hero_ascii = (
             "########  ########  ##    ##   ######    ########  ########   \n"
@@ -376,10 +394,10 @@ class OilTrackerApp:
             text=hero_ascii,
             style="AsciiHero.TLabel",
             justify="left",
-        ).grid(row=3, column=0, sticky="w", pady=(12, 0))
+        ).grid(row=4, column=0, sticky="w", pady=(12, 0))
 
         hero_meta = ttk.Frame(header, style="Hero.TFrame")
-        hero_meta.grid(row=0, column=1, rowspan=4, sticky="nsew", padx=(24, 0))
+        hero_meta.grid(row=0, column=1, rowspan=5, sticky="nsew", padx=(24, 0))
         hero_meta.columnconfigure(0, weight=1)
         hero_meta.columnconfigure(1, weight=1)
 
@@ -528,6 +546,25 @@ class OilTrackerApp:
 
         self.status_var.set(self._birthday_easter_egg.status_text)
         self.root.after(120, self._animate_birthday_banner)
+
+    def _update_sleep_prompt(self) -> None:
+        now = datetime.now()
+        today_key = now.strftime("%Y-%m-%d")
+        if self._sleep_prompt_date != today_key:
+            self._sleep_prompt_date = today_key
+            self._sleep_prompt_last_key = None
+            self._sleep_prompt_count = 0
+
+        schedule_minutes = set(range(0, 121, 30)) | set(range(120, 241, 15))
+        minutes_since_midnight = now.hour * 60 + now.minute
+        is_prompt_time = minutes_since_midnight in schedule_minutes
+        key = f"{today_key} {now:%H:%M}"
+        if is_prompt_time and key != self._sleep_prompt_last_key:
+            self._sleep_prompt_count += 1
+            self._sleep_prompt_last_key = key
+
+        self.sleep_hint_var.set(f"睡眠提示：{today_key} {now:%H:%M} 第{self._sleep_prompt_count}次")
+        self.root.after(30000, self._update_sleep_prompt)
 
     def _animate_birthday_banner(self) -> None:
         if not self._birthday_mode or not hasattr(self, "_birthday_canvas"):
